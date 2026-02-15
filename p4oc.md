@@ -40,7 +40,7 @@ A new proc entry is exposed per interface:
 echo "1" > /proc/net/<driver>/<iface>/p4oc_ra
 
 # Explicit settings (recommended starting point)
-echo "1 7 20 3 2" > /proc/net/<driver>/<iface>/p4oc_ra
+echo "1 7 20 3 2 45 30 3 2" > /proc/net/<driver>/<iface>/p4oc_ra
 
 # Disable
  echo "0" > /proc/net/<driver>/<iface>/p4oc_ra
@@ -58,9 +58,22 @@ Readback includes:
 - `interval_ms`
 - `up_hysteresis`
 - `probe_step`
+- `retry_th_high`, `retry_th_low` (retry EWMA thresholds for down-bias)
+- `cooldown_high`, `cooldown_low` (rate-up cooldown cycles after high retry)
 - `effective_interval_ms` (actual clamped value used by timer logic)
 
 ---
+
+
+### Interpreting iw and tx_rate_bmp output
+
+- `iw dev wlan0 link` has both `rx bitrate` and `tx bitrate`:
+  - `tx bitrate` is this STA's TX rate (affected by our RA mask changes).
+  - `rx bitrate` is AP->STA direction (not directly controlled by this driver TX RA logic).
+- `tx_rate_bmp` is an allowed-rate bitmap view, not necessarily the currently used per-packet rate.
+
+So seeing e.g. `rx bitrate ... MCS14` while `tx bitrate ... MCS3` can still be consistent with P4OC
+TX constraints.
 
 ## 3) Current rate-selection trigger logic (important)
 
@@ -187,7 +200,7 @@ So the effective update cadence is:
 If you want streamer checks at 20–50 ms, set:
 
 ```sh
-echo "1 7 20 3 2" > /proc/net/<driver>/<iface>/p4oc_ra
+echo "1 7 20 3 2 45 30 3 2" > /proc/net/<driver>/<iface>/p4oc_ra
 ```
 
 Then poll `p4oc_bw_hint` at or slightly above `poll_recommend_ms`.
@@ -233,4 +246,5 @@ Then poll `p4oc_bw_hint` at or slightly above `poll_recommend_ms`.
   - Thresholds/cooldown still static (not runtime-tunable yet).
 
 ### Recommended next implementation step
-- Add queue/backlog signal (or tx-drop delta) as additional emergency downshift trigger and make thresholds tunable in `p4oc_ra`.
+- Add queue/backlog signal (or tx-drop delta) as additional emergency downshift trigger.
+- Add live-rate diagnostics into monitor helper to correlate `tx_rate_bmp` with observed `tx bitrate`.

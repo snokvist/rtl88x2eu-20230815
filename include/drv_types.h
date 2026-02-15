@@ -2002,6 +2002,10 @@ struct _ADAPTER {
 	u16 p4oc_ra_interval_ms; /* dynamic check period in stability mode */
 	u8 p4oc_ra_up_hysteresis; /* cycles required before allowing rate-up */
 	u8 p4oc_ra_probe_step; /* target probe step (debug/control point) */
+	u8 p4oc_retry_th_high; /* high retry threshold for strong down-bias */
+	u8 p4oc_retry_th_low; /* low retry threshold for moderate down-bias */
+	u8 p4oc_cooldown_high; /* cooldown cycles set when retry >= high */
+	u8 p4oc_cooldown_low; /* cooldown cycles set when retry >= low */
 	u8 power_offset;
 	u8 driver_tx_bw_mode;
 	u8 rsvd_page_offset;

@@ -1567,6 +1567,8 @@ void phydm_ra_mask_watchdog(void *dm_void)
 	u64 old_ra_mask = 0;
 	u64 new_ra_mask = 0;
 	boolean p4oc_mode = false;
+	u8 retry_th_high = 45, retry_th_low = 30;
+	u8 cooldown_high = 3, cooldown_low = 2;
 
 	if (!(dm->support_ability & ODM_BB_RA_MASK))
 		return;
@@ -1576,6 +1578,14 @@ void phydm_ra_mask_watchdog(void *dm_void)
 
 #if (DM_ODM_SUPPORT_TYPE == ODM_CE)
 	p4oc_mode = phydm_p4oc_ra_enabled(dm);
+	if (p4oc_mode) {
+		PADAPTER adapter = (PADAPTER)dm->adapter;
+
+		retry_th_high = adapter->p4oc_retry_th_high;
+		retry_th_low = adapter->p4oc_retry_th_low;
+		cooldown_high = adapter->p4oc_cooldown_high;
+		cooldown_low = adapter->p4oc_cooldown_low;
+	}
 #endif
 
 	if (!p4oc_mode && (dm->phydm_sys_up_time % 2) == 1)
@@ -1648,16 +1658,16 @@ void phydm_ra_mask_watchdog(void *dm_void)
 			retry_ratio_use = (ra_t->p4oc_retry_ewma[sta_idx] * 3 + ra->curr_retry_ratio) >> 2;
 			ra_t->p4oc_retry_ewma[sta_idx] = retry_ratio_use;
 
-			if (retry_ratio_use >= 45) {
+			if (retry_ratio_use >= retry_th_high) {
 				if (rssi_lv_new <= (RA_FLOOR_TABLE_SIZE - 3))
 					rssi_lv_new += 2;
 				else
 					rssi_lv_new = RA_FLOOR_TABLE_SIZE - 1;
-				ra_t->p4oc_up_cooldown[sta_idx] = 3;
-			} else if (retry_ratio_use >= 30) {
+				ra_t->p4oc_up_cooldown[sta_idx] = cooldown_high;
+			} else if (retry_ratio_use >= retry_th_low) {
 				if (rssi_lv_new < (RA_FLOOR_TABLE_SIZE - 1))
 					rssi_lv_new += 1;
-				ra_t->p4oc_up_cooldown[sta_idx] = 2;
+				ra_t->p4oc_up_cooldown[sta_idx] = cooldown_low;
 			} else if (ra_t->p4oc_up_cooldown[sta_idx] > 0) {
 				ra_t->p4oc_up_cooldown[sta_idx]--;
 			}

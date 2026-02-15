@@ -2969,6 +2969,10 @@ int proc_get_p4oc_ra_cfg(struct seq_file *m, void *v)
 	RTW_PRINT_SEL(m, "interval_ms=%u\n", adapter->p4oc_ra_interval_ms);
 	RTW_PRINT_SEL(m, "up_hysteresis=%u\n", adapter->p4oc_ra_up_hysteresis);
 	RTW_PRINT_SEL(m, "probe_step=%u\n", adapter->p4oc_ra_probe_step);
+	RTW_PRINT_SEL(m, "retry_th_high=%u\n", adapter->p4oc_retry_th_high);
+	RTW_PRINT_SEL(m, "retry_th_low=%u\n", adapter->p4oc_retry_th_low);
+	RTW_PRINT_SEL(m, "cooldown_high=%u\n", adapter->p4oc_cooldown_high);
+	RTW_PRINT_SEL(m, "cooldown_low=%u\n", adapter->p4oc_cooldown_low);
 	RTW_PRINT_SEL(m, "effective_interval_ms=%u\n", rtw_dynamic_chk_timer_interval_ms(adapter));
 
 	return 0;
@@ -2982,6 +2986,8 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	u32 tx_mbps = dvobj->traffic_stat.cur_tx_tp;
 	u32 rx_mbps = dvobj->traffic_stat.cur_rx_tp;
 	u32 interval_ms = dvobj->traffic_stat.tp_calc_interval_ms;
+	u32 tx_kbps = 0, rx_kbps = 0;
+	u32 app_hint_kbps = 0;
 	u32 app_hint_mbps = 0;
 
 	/*
@@ -2990,16 +2996,28 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	 * - if one direction is idle, use the active direction
 	 * - keep ~20% guard-band for jitter/retransmissions
 	 */
-	if (tx_mbps && rx_mbps)
-		app_hint_mbps = tx_mbps < rx_mbps ? tx_mbps : rx_mbps;
-	else
-		app_hint_mbps = tx_mbps > rx_mbps ? tx_mbps : rx_mbps;
+	if (interval_ms == 0)
+		interval_ms = 1;
 
-	app_hint_mbps = (app_hint_mbps * 8) / 10;
+	tx_kbps = (u32)((dvobj->traffic_stat.cur_tx_bytes * 8) / interval_ms);
+	rx_kbps = (u32)((dvobj->traffic_stat.cur_rx_bytes * 8) / interval_ms);
+
+	if (tx_kbps && rx_kbps)
+		app_hint_kbps = tx_kbps < rx_kbps ? tx_kbps : rx_kbps;
+	else
+		app_hint_kbps = tx_kbps > rx_kbps ? tx_kbps : rx_kbps;
+
+	app_hint_kbps = (app_hint_kbps * 8) / 10;
+	app_hint_mbps = app_hint_kbps / 1000;
+	if (app_hint_mbps == 0 && app_hint_kbps > 0)
+		app_hint_mbps = 1;
 
 	RTW_PRINT_SEL(m, "tx_mbps=%u\n", tx_mbps);
 	RTW_PRINT_SEL(m, "rx_mbps=%u\n", rx_mbps);
+	RTW_PRINT_SEL(m, "tx_kbps=%u\n", tx_kbps);
+	RTW_PRINT_SEL(m, "rx_kbps=%u\n", rx_kbps);
 	RTW_PRINT_SEL(m, "sample_interval_ms=%u\n", interval_ms);
+	RTW_PRINT_SEL(m, "app_hint_kbps=%u\n", app_hint_kbps);
 	RTW_PRINT_SEL(m, "app_hint_mbps=%u\n", app_hint_mbps);
 	RTW_PRINT_SEL(m, "p4oc_enabled=%u\n", adapter->p4oc_ra_enable);
 	RTW_PRINT_SEL(m, "poll_recommend_ms=%u\n", rtw_dynamic_chk_timer_interval_ms(adapter));
@@ -3013,6 +3031,7 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 	char tmp[64];
 	unsigned int en = 0, max_mcs = 7, interval = 20, up_hyst = 3, probe_step = 2;
+	unsigned int retry_th_high = 45, retry_th_low = 30, cooldown_high = 3, cooldown_low = 2;
 	int num;
 
 	if (count < 1)
@@ -3027,7 +3046,7 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 		return count;
 
 	tmp[count - 1] = '\0';
-	num = sscanf(tmp, "%u %u %u %u %u", &en, &max_mcs, &interval, &up_hyst, &probe_step);
+	num = sscanf(tmp, "%u %u %u %u %u %u %u %u %u", &en, &max_mcs, &interval, &up_hyst, &probe_step, &retry_th_high, &retry_th_low, &cooldown_high, &cooldown_low);
 	if (num < 1)
 		return count;
 
@@ -3041,9 +3060,24 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 		adapter->p4oc_ra_up_hysteresis = up_hyst > 20 ? 20 : (u8)up_hyst;
 	if (num >= 5)
 		adapter->p4oc_ra_probe_step = probe_step > 4 ? 4 : (u8)probe_step;
+	if (num >= 6)
+		adapter->p4oc_retry_th_high = retry_th_high > 100 ? 100 : (u8)retry_th_high;
+	if (num >= 7)
+		adapter->p4oc_retry_th_low = retry_th_low > 100 ? 100 : (u8)retry_th_low;
+	if (num >= 8)
+		adapter->p4oc_cooldown_high = cooldown_high > 10 ? 10 : (u8)cooldown_high;
+	if (num >= 9)
+		adapter->p4oc_cooldown_low = cooldown_low > 10 ? 10 : (u8)cooldown_low;
+
+	if (adapter->p4oc_retry_th_low > adapter->p4oc_retry_th_high)
+		adapter->p4oc_retry_th_low = adapter->p4oc_retry_th_high;
 
 	if (adapter->p4oc_ra_up_hysteresis == 0)
 		adapter->p4oc_ra_up_hysteresis = 1;
+	if (adapter->p4oc_cooldown_high == 0)
+		adapter->p4oc_cooldown_high = 1;
+	if (adapter->p4oc_cooldown_low == 0)
+		adapter->p4oc_cooldown_low = 1;
 
 	_set_timer(&adapter_to_dvobj(adapter)->dynamic_chk_timer, rtw_dynamic_chk_timer_interval_ms(adapter));
 
