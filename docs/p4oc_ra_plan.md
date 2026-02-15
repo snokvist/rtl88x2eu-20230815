@@ -11,7 +11,7 @@ Provide a deterministic link-survival mode with minimal knobs.
    - `rssi_th_ofst`
 2. PHYDM behavior when enabled:
    - apply HT cap mask,
-   - strip CCK bits on non-CCK wireless modes,
+   - strip CCK bits on non-CCK wireless modes (and force-strip on 5GHz),
    - apply RSSI threshold offset in `phydm_rssi_lv_dec()`.
 3. Dynamic check interval:
    - clamped to 10..50ms while enabled.

@@ -1152,10 +1152,20 @@ u64 phydm_get_bb_mod_ra_mask(void *dm_void, u8 sta_idx)
 
 #if (DM_ODM_SUPPORT_TYPE == ODM_CE)
 	if (phydm_p4oc_ra_enabled(dm)) {
+		boolean block_cck = false;
+
 		ra_mask_bitmap &= phydm_p4oc_ht_cap_mask(dm);
 
-		/* Prevent accidental CCK fallback when current wireless mode has no CCK */
+		/*
+		 * Prevent accidental CCK fallback in non-CCK links.
+		 * Some paths may still carry WIRELESS_CCK in wrls_mode,
+		 * so also force-block on 5GHz band.
+		 */
 		if (!(wrls_mode & WIRELESS_CCK))
+			block_cck = true;
+		if (dm->band_type && (*dm->band_type == ODM_BAND_5G))
+			block_cck = true;
+		if (block_cck)
 			ra_mask_bitmap &= ~0xFULL;
 	}
 #endif
