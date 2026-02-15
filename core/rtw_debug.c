@@ -2994,7 +2994,7 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	u32 app_hint_kbps = 0;
 	u8 curr_rate = DESC_RATE1M;
 	u8 curr_mcs = 0xFF;
-	u8 allowed_max_mcs = 0xFF;
+	u8 allowed_max_mcs = 7;
 	s8 rssi = 0;
 	u8 retry_ewma = 0;
 	u8 cooldown = 0;
@@ -3021,20 +3021,24 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 		rssi = psta->cmn.rssi_stat.rssi;
 		sta_idx = psta->cmn.mac_id;
 
+		allowed_max_mcs = adapter->p4oc_ra_max_ht_mcs;
+		if (allowed_max_mcs > 7)
+			allowed_max_mcs = 7;
+
 		if (curr_rate >= DESC_RATEMCS0 && curr_rate <= DESC_RATEMCS7) {
 			curr_mcs = curr_rate - DESC_RATEMCS0;
-			allowed_max_mcs = adapter->p4oc_ra_max_ht_mcs;
 			if (adapter->p4oc_ra_probe_step)
 				allowed_max_mcs = curr_mcs + adapter->p4oc_ra_probe_step < allowed_max_mcs ?
 					(curr_mcs + adapter->p4oc_ra_probe_step) : allowed_max_mcs;
-			if (allowed_max_mcs > 7)
-				allowed_max_mcs = 7;
 			theo_curr_kbps = (bw == CHANNEL_WIDTH_40 ? ht40_kbps[curr_mcs] : ht20_kbps[curr_mcs]);
-			theo_allowed_kbps = (bw == CHANNEL_WIDTH_40 ? ht40_kbps[allowed_max_mcs] : ht20_kbps[allowed_max_mcs]);
-			if (sgi) {
-				theo_curr_kbps = (theo_curr_kbps * 11) / 10;
-				theo_allowed_kbps = (theo_allowed_kbps * 11) / 10;
-			}
+		} else {
+			theo_curr_kbps = rtw_desc_rate_to_bitrate(bw, curr_rate, sgi) * 100;
+		}
+
+		theo_allowed_kbps = (bw == CHANNEL_WIDTH_40 ? ht40_kbps[allowed_max_mcs] : ht20_kbps[allowed_max_mcs]);
+		if (sgi) {
+			theo_curr_kbps = (theo_curr_kbps * 11) / 10;
+			theo_allowed_kbps = (theo_allowed_kbps * 11) / 10;
 		}
 	}
 
