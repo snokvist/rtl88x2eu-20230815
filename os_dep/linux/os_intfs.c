@@ -2681,6 +2681,8 @@ u8 rtw_init_default_value(_adapter *padapter)
 	padapter->p4oc_retry_th_low = 30;
 	padapter->p4oc_cooldown_high = 3;
 	padapter->p4oc_cooldown_low = 2;
+	padapter->p4oc_rssi_th_offset = 0;
+	padapter->p4oc_rssi_up_gap = 3;
 	padapter->power_offset = 0;
 	padapter->rsvd_page_offset = 0;
 	padapter->rsvd_page_num = 0;
@@ -3158,6 +3160,8 @@ u8 rtw_init_drv_sw(_adapter *padapter)
 	padapter->p4oc_retry_th_low = 30;
 	padapter->p4oc_cooldown_high = 3;
 	padapter->p4oc_cooldown_low = 2;
+	padapter->p4oc_rssi_th_offset = 0;
+	padapter->p4oc_rssi_up_gap = 3;
 	padapter->power_offset = 0;
 	padapter->rsvd_page_offset = 0;
 	padapter->rsvd_page_num = 0;

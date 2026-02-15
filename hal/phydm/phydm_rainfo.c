@@ -1880,6 +1880,17 @@ u8 phydm_rssi_lv_dec(void *dm_void, u32 rssi, u8 ratr_state)
 	u8 rssi_lv_t[RA_FLOOR_TABLE_SIZE] = {20, 34, 38, 42, 46, 50, 100};
 	u8 new_rssi_lv = 0;
 	u8 i;
+	u8 floor_up_gap = RA_FLOOR_UP_GAP;
+	s8 floor_th_ofst = 0;
+
+#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
+	if (phydm_p4oc_ra_enabled(dm)) {
+		PADAPTER adapter = (PADAPTER)dm->adapter;
+
+		floor_up_gap = adapter->p4oc_rssi_up_gap;
+		floor_th_ofst = adapter->p4oc_rssi_th_offset;
+	}
+#endif
 
 	PHYDM_DBG(dm, DBG_RA_MASK,
 		  "curr RA level=(%d), Table_ori=[%d, %d, %d, %d, %d, %d]\n",
@@ -1887,8 +1898,16 @@ u8 phydm_rssi_lv_dec(void *dm_void, u32 rssi, u8 ratr_state)
 		  rssi_lv_t[3], rssi_lv_t[4], rssi_lv_t[5]);
 
 	for (i = 0; i < RA_FLOOR_TABLE_SIZE; i++) {
+		s16 th = (s16)rssi_lv_t[i] + floor_th_ofst;
+
+		if (th < 1)
+			th = 1;
+		if (th > 100)
+			th = 100;
+		rssi_lv_t[i] = (u8)th;
+
 		if (i >= (ratr_state))
-			rssi_lv_t[i] += RA_FLOOR_UP_GAP;
+			rssi_lv_t[i] += floor_up_gap;
 	}
 
 	PHYDM_DBG(dm, DBG_RA_MASK,

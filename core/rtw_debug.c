@@ -2973,6 +2973,8 @@ int proc_get_p4oc_ra_cfg(struct seq_file *m, void *v)
 	RTW_PRINT_SEL(m, "retry_th_low=%u\n", adapter->p4oc_retry_th_low);
 	RTW_PRINT_SEL(m, "cooldown_high=%u\n", adapter->p4oc_cooldown_high);
 	RTW_PRINT_SEL(m, "cooldown_low=%u\n", adapter->p4oc_cooldown_low);
+	RTW_PRINT_SEL(m, "rssi_th_offset=%d\n", adapter->p4oc_rssi_th_offset);
+	RTW_PRINT_SEL(m, "rssi_up_gap=%u\n", adapter->p4oc_rssi_up_gap);
 	RTW_PRINT_SEL(m, "effective_interval_ms=%u\n", rtw_dynamic_chk_timer_interval_ms(adapter));
 
 	return 0;
@@ -2986,8 +2988,7 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 	struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
 	struct dm_struct *dm = adapter_to_phydm(adapter);
-	struct ra_table *ra_t = dm ? &dm->dm_ra_table : NULL;
-	struct sta_info *psta = NULL;
+		struct sta_info *psta = NULL;
 	u32 interval_ms = dvobj->traffic_stat.tp_calc_interval_ms;
 	u32 tx_kbps = 0, rx_kbps = 0;
 	u32 app_hint_kbps = 0;
@@ -3008,15 +3009,9 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	if (interval_ms == 0)
 		interval_ms = 1;
 
-	tx_kbps = (u32)((dvobj->traffic_stat.cur_tx_bytes * 8) / interval_ms);
-	rx_kbps = (u32)((dvobj->traffic_stat.cur_rx_bytes * 8) / interval_ms);
-
-	if (tx_kbps && rx_kbps)
-		app_hint_kbps = tx_kbps < rx_kbps ? tx_kbps : rx_kbps;
-	else
-		app_hint_kbps = tx_kbps > rx_kbps ? tx_kbps : rx_kbps;
-
-	app_hint_kbps = (app_hint_kbps * 8) / 10;
+	tx_kbps = dvobj->traffic_stat.tx_kbps_ma;
+	rx_kbps = dvobj->traffic_stat.rx_kbps_ma;
+	app_hint_kbps = dvobj->traffic_stat.app_hint_kbps_ma;
 
 	psta = rtw_get_stainfo(&adapter->stapriv, get_bssid(&adapter->mlmepriv));
 	if (psta) {
@@ -3048,10 +3043,10 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	else
 		trend = "legacy_ra";
 
-	if (ra_t && sta_idx < ODM_ASSOCIATE_ENTRY_NUM) {
-		retry_ewma = ra_t->p4oc_retry_ewma[sta_idx];
-		cooldown = ra_t->p4oc_up_cooldown[sta_idx];
-		up_pending = ra_t->p4oc_up_pending[sta_idx];
+	if (dm && sta_idx < ODM_ASSOCIATE_ENTRY_NUM) {
+		retry_ewma = dm->dm_ra_table.p4oc_retry_ewma[sta_idx];
+		cooldown = dm->dm_ra_table.p4oc_up_cooldown[sta_idx];
+		up_pending = dm->dm_ra_table.p4oc_up_pending[sta_idx];
 		if (adapter->p4oc_ra_enable) {
 			if (retry_ewma >= adapter->p4oc_retry_th_low)
 				trend = "down";
@@ -3089,6 +3084,8 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 	char tmp[64];
 	unsigned int en = 0, max_mcs = 7, interval = 20, up_hyst = 3, probe_step = 2;
 	unsigned int retry_th_high = 45, retry_th_low = 30, cooldown_high = 3, cooldown_low = 2;
+	int rssi_th_offset = 0;
+	unsigned int rssi_up_gap = 3;
 	int num;
 
 	if (count < 1)
@@ -3103,7 +3100,7 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 		return count;
 
 	tmp[count - 1] = '\0';
-	num = sscanf(tmp, "%u %u %u %u %u %u %u %u %u", &en, &max_mcs, &interval, &up_hyst, &probe_step, &retry_th_high, &retry_th_low, &cooldown_high, &cooldown_low);
+	num = sscanf(tmp, "%u %u %u %u %u %u %u %u %u %d %u", &en, &max_mcs, &interval, &up_hyst, &probe_step, &retry_th_high, &retry_th_low, &cooldown_high, &cooldown_low, &rssi_th_offset, &rssi_up_gap);
 	if (num < 1)
 		return count;
 
@@ -3125,6 +3122,15 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 		adapter->p4oc_cooldown_high = cooldown_high > 10 ? 10 : (u8)cooldown_high;
 	if (num >= 9)
 		adapter->p4oc_cooldown_low = cooldown_low > 10 ? 10 : (u8)cooldown_low;
+	if (num >= 10) {
+		if (rssi_th_offset > 30)
+			rssi_th_offset = 30;
+		if (rssi_th_offset < -30)
+			rssi_th_offset = -30;
+		adapter->p4oc_rssi_th_offset = (s8)rssi_th_offset;
+	}
+	if (num >= 11)
+		adapter->p4oc_rssi_up_gap = rssi_up_gap > 10 ? 10 : (u8)rssi_up_gap;
 
 	if (adapter->p4oc_retry_th_low > adapter->p4oc_retry_th_high)
 		adapter->p4oc_retry_th_low = adapter->p4oc_retry_th_high;
@@ -3135,6 +3141,8 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 		adapter->p4oc_cooldown_high = 1;
 	if (adapter->p4oc_cooldown_low == 0)
 		adapter->p4oc_cooldown_low = 1;
+	if (adapter->p4oc_rssi_up_gap == 0)
+		adapter->p4oc_rssi_up_gap = 1;
 
 	_set_timer(&adapter_to_dvobj(adapter)->dynamic_chk_timer, rtw_dynamic_chk_timer_interval_ms(adapter));
 

@@ -13,7 +13,7 @@ A new proc entry is added:
 
 Format:
 
-`echo "<enable> [max_ht_mcs] [interval_ms] [up_hysteresis] [probe_step] [retry_hi] [retry_low] [cooldown_hi] [cooldown_low]" > p4oc_ra`
+`echo "<enable> [max_ht_mcs] [interval_ms] [up_hysteresis] [probe_step] [retry_hi] [retry_low] [cooldown_hi] [cooldown_low] [rssi_th_ofst] [rssi_up_gap]" > p4oc_ra`
 
 Examples:
 - `echo "1" > p4oc_ra` : enable defaults.
@@ -45,6 +45,7 @@ Read back:
 4. Link under degraded RF should show fast downshift and slower upshift.
 
 5. `p4oc_bw_hint` provides a conservative app-level bandwidth hint for adaptive streamers.
+6. `p4oc_bw_hint` kbps values are moving averages over the last 5 readings to reduce 20ms jitter.
 
 ## Current Scope
 Implemented for CE/Linux path in this repository with minimal invasive changes,
@@ -72,6 +73,7 @@ reusing existing PHYDM RA mask and watchdog mechanisms.
 2. Extend `p4oc_bw_hint` with per-link telemetry (`curr_mcs`, `rssi`, trend, theoretical kbps). **Implemented**.
 3. Remove Mbps-only dependency from app side, keep kbps-centric hint. **Implemented**.
 4. Add AP-mode peer selection for telemetry when multiple stations linked. **Planned**.
+5. Add runtime RSSI floor tuning knobs while preserving legacy behavior when P4OC off. **Implemented**.
 
 ## Evaluation (v3)
 - Compared to baseline and v2:

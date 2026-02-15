@@ -894,6 +894,19 @@ struct rtw_traffic_statistics {
 	u64	cur_rx_bytes;
 	u64	last_rx_bytes;
 	u32	cur_rx_tp; /* Rx throughput in Mbps. */
+	u32	cur_tx_kbps; /* instantaneous tx throughput in kbps */
+	u32	cur_rx_kbps; /* instantaneous rx throughput in kbps */
+	u32	tx_kbps_ma; /* moving average (last 5) tx throughput in kbps */
+	u32	rx_kbps_ma; /* moving average (last 5) rx throughput in kbps */
+	u32	app_hint_kbps_ma; /* moving average (last 5) app hint kbps */
+	u32	tx_kbps_hist[5];
+	u32	rx_kbps_hist[5];
+	u32	app_hint_kbps_hist[5];
+	u32	tx_kbps_sum;
+	u32	rx_kbps_sum;
+	u32	app_hint_kbps_sum;
+	u8	hint_hist_idx;
+	u8	hint_hist_num;
 	u32	tp_calc_interval_ms; /* last traffic throughput calculation interval */
 	systime	tp_calc_time;
 };
@@ -2006,6 +2019,8 @@ struct _ADAPTER {
 	u8 p4oc_retry_th_low; /* low retry threshold for moderate down-bias */
 	u8 p4oc_cooldown_high; /* cooldown cycles set when retry >= high */
 	u8 p4oc_cooldown_low; /* cooldown cycles set when retry >= low */
+	s8 p4oc_rssi_th_offset; /* offset applied to RSSI floor table in P4OC */
+	u8 p4oc_rssi_up_gap; /* per-level upward hysteresis gap in P4OC */
 	u8 power_offset;
 	u8 driver_tx_bw_mode;
 	u8 rsvd_page_offset;

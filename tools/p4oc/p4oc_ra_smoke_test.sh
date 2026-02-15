@@ -20,7 +20,7 @@ P4OC="$(find_proc_file p4oc_ra)" || { echo "missing p4oc_ra" >&2; exit 2; }
 TXBMP="$(find_proc_file tx_rate_bmp)"
 
 echo "[1] write/read p4oc_ra"
-echo "1 7 20 3 2 45 30 3 2" > "$P4OC" || exit 3
+echo "1 7 20 3 2 45 30 3 2 0 3" > "$P4OC" || exit 3
 cat "$P4OC" || exit 4
 
 echo "[2] validate effective interval in [10..50]"

@@ -30,7 +30,7 @@ A new proc entry is exposed per interface:
 ### Write format
 
 ```sh
-# echo "<enable> [max_ht_mcs] [interval_ms] [up_hysteresis] [probe_step] [retry_hi] [retry_low] [cooldown_hi] [cooldown_low]" > p4oc_ra
+# echo "<enable> [max_ht_mcs] [interval_ms] [up_hysteresis] [probe_step] [retry_hi] [retry_low] [cooldown_hi] [cooldown_low] [rssi_th_ofst] [rssi_up_gap]" > p4oc_ra
 ```
 
 ### Examples
@@ -40,7 +40,7 @@ A new proc entry is exposed per interface:
 echo "1" > /proc/net/<driver>/<iface>/p4oc_ra
 
 # Explicit settings (recommended starting point)
-echo "1 7 20 3 2 45 30 3 2" > /proc/net/<driver>/<iface>/p4oc_ra
+echo "1 7 20 3 2 45 30 3 2 0 3" > /proc/net/<driver>/<iface>/p4oc_ra
 
 # Disable
  echo "0" > /proc/net/<driver>/<iface>/p4oc_ra
@@ -60,6 +60,8 @@ Readback includes:
 - `probe_step`
 - `retry_th_high`, `retry_th_low` (retry EWMA thresholds for down-bias)
 - `cooldown_high`, `cooldown_low` (rate-up cooldown cycles after high retry)
+- `rssi_th_offset` (signed offset applied to RSSI floor table in P4OC)
+- `rssi_up_gap` (per-level upward hysteresis gap in P4OC)
 - `effective_interval_ms` (actual clamped value used by timer logic)
 
 ---
@@ -82,7 +84,8 @@ TX constraints.
 The driver recomputes allowed RA mask from:
 - wireless mode / BW / streams,
 - then RSSI level (`rssi_level`) via PHYDM floor table,
-- then (in P4OC mode) retry-ratio guardrails,
+- then (in P4OC mode) optional RSSI-floor tuning (`rssi_th_offset`, `rssi_up_gap`),
+- then retry-ratio guardrails,
 - then P4OC cap/probe-step/hysteresis logic.
 
 ### RSSI floor table used by PHYDM
@@ -90,6 +93,14 @@ Base thresholds:
 - `[20, 34, 38, 42, 46, 50, 100]`
 
 PHYDM then applies a floor-up gap (`+3`) depending on current RA state, which provides built-in threshold hysteresis in level changes.
+
+Backwards compatibility:
+- When P4OC is disabled, existing legacy thresholds/gap behavior is unchanged.
+- P4OC RSSI tuning only applies when P4OC mode is enabled.
+
+RSSI floor tuning knobs:
+- `rssi_th_offset` shifts the entire RSSI floor table up/down (signed).
+- `rssi_up_gap` replaces the default per-level `+3` floor-up gap used for upward hysteresis while in P4OC mode.
 
 ### Upward allowed-mask changes (rate-up side)
 In P4OC mode:
@@ -172,9 +183,9 @@ A read-only proc endpoint is provided for app-side bitrate adaptation:
 `/proc/net/<driver>/<iface>/p4oc_bw_hint`
 
 Output fields:
-- `tx_kbps`: current TX throughput estimate from driver traffic stats.
-- `rx_kbps`: current RX throughput estimate from driver traffic stats.
-- `app_hint_kbps`: conservative bitrate suggestion for app encoders/ABR logic
+- `tx_kbps`: moving-average TX throughput estimate (last 5 readings).
+- `rx_kbps`: moving-average RX throughput estimate (last 5 readings).
+- `app_hint_kbps`: moving-average conservative bitrate suggestion (last 5 readings) for app encoders/ABR logic
   (`min(tx,rx)` when bidirectional traffic exists, otherwise max active direction,
   then 20% guard band).
 - `sample_interval_ms`: last interval used for throughput sample calculation.
@@ -205,7 +216,7 @@ So the effective update cadence is:
 If you want streamer checks at 20–50 ms, set:
 
 ```sh
-echo "1 7 20 3 2 45 30 3 2" > /proc/net/<driver>/<iface>/p4oc_ra
+echo "1 7 20 3 2 45 30 3 2 0 3" > /proc/net/<driver>/<iface>/p4oc_ra
 ```
 
 Then poll `p4oc_bw_hint` at or slightly above `poll_recommend_ms`.

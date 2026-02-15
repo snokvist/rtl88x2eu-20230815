@@ -3913,8 +3913,51 @@ static void collect_traffic_statistics(_adapter *padapter)
 		pdvobjpriv->traffic_stat.tp_calc_time = now;
 		pdvobjpriv->traffic_stat.tp_calc_interval_ms = interval_ms;
 
-		pdvobjpriv->traffic_stat.cur_tx_tp = (u32)((pdvobjpriv->traffic_stat.cur_tx_bytes * 8 * 1000) / interval_ms / 1024 / 1024);/*Mbps*/
-		pdvobjpriv->traffic_stat.cur_rx_tp = (u32)((pdvobjpriv->traffic_stat.cur_rx_bytes * 8 * 1000) / interval_ms / 1024 / 1024);/*Mbps*/
+		pdvobjpriv->traffic_stat.cur_tx_kbps = (u32)((pdvobjpriv->traffic_stat.cur_tx_bytes * 8) / interval_ms);
+		pdvobjpriv->traffic_stat.cur_rx_kbps = (u32)((pdvobjpriv->traffic_stat.cur_rx_bytes * 8) / interval_ms);
+
+		{
+			u32 app_hint_kbps = 0;
+			u8 idx = pdvobjpriv->traffic_stat.hint_hist_idx;
+			u8 n = pdvobjpriv->traffic_stat.hint_hist_num;
+
+			if (pdvobjpriv->traffic_stat.cur_tx_kbps && pdvobjpriv->traffic_stat.cur_rx_kbps)
+				app_hint_kbps = pdvobjpriv->traffic_stat.cur_tx_kbps < pdvobjpriv->traffic_stat.cur_rx_kbps ?
+					pdvobjpriv->traffic_stat.cur_tx_kbps : pdvobjpriv->traffic_stat.cur_rx_kbps;
+			else
+				app_hint_kbps = pdvobjpriv->traffic_stat.cur_tx_kbps > pdvobjpriv->traffic_stat.cur_rx_kbps ?
+					pdvobjpriv->traffic_stat.cur_tx_kbps : pdvobjpriv->traffic_stat.cur_rx_kbps;
+
+			app_hint_kbps = (app_hint_kbps * 8) / 10;
+
+			if (n < 5) {
+				n++;
+				pdvobjpriv->traffic_stat.hint_hist_num = n;
+			} else {
+				pdvobjpriv->traffic_stat.tx_kbps_sum -= pdvobjpriv->traffic_stat.tx_kbps_hist[idx];
+				pdvobjpriv->traffic_stat.rx_kbps_sum -= pdvobjpriv->traffic_stat.rx_kbps_hist[idx];
+				pdvobjpriv->traffic_stat.app_hint_kbps_sum -= pdvobjpriv->traffic_stat.app_hint_kbps_hist[idx];
+			}
+
+			pdvobjpriv->traffic_stat.tx_kbps_hist[idx] = pdvobjpriv->traffic_stat.cur_tx_kbps;
+			pdvobjpriv->traffic_stat.rx_kbps_hist[idx] = pdvobjpriv->traffic_stat.cur_rx_kbps;
+			pdvobjpriv->traffic_stat.app_hint_kbps_hist[idx] = app_hint_kbps;
+
+			pdvobjpriv->traffic_stat.tx_kbps_sum += pdvobjpriv->traffic_stat.cur_tx_kbps;
+			pdvobjpriv->traffic_stat.rx_kbps_sum += pdvobjpriv->traffic_stat.cur_rx_kbps;
+			pdvobjpriv->traffic_stat.app_hint_kbps_sum += app_hint_kbps;
+
+			pdvobjpriv->traffic_stat.hint_hist_idx = (idx + 1) % 5;
+
+			if (n) {
+				pdvobjpriv->traffic_stat.tx_kbps_ma = pdvobjpriv->traffic_stat.tx_kbps_sum / n;
+				pdvobjpriv->traffic_stat.rx_kbps_ma = pdvobjpriv->traffic_stat.rx_kbps_sum / n;
+				pdvobjpriv->traffic_stat.app_hint_kbps_ma = pdvobjpriv->traffic_stat.app_hint_kbps_sum / n;
+			}
+		}
+
+		pdvobjpriv->traffic_stat.cur_tx_tp = pdvobjpriv->traffic_stat.cur_tx_kbps / 1000;/*Mbps*/
+		pdvobjpriv->traffic_stat.cur_rx_tp = pdvobjpriv->traffic_stat.cur_rx_kbps / 1000;/*Mbps*/
 	}
 
 	#ifdef DBG_TRAFFIC_STATISTIC
