@@ -2965,6 +2965,7 @@ int proc_get_p4oc_ra_cfg(struct seq_file *m, void *v)
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 
 	RTW_PRINT_SEL(m, "enable=%u\n", adapter->p4oc_ra_enable);
+	RTW_PRINT_SEL(m, "simple_mode=%u\n", adapter->p4oc_simple_mode);
 	RTW_PRINT_SEL(m, "max_ht_mcs=%u\n", adapter->p4oc_ra_max_ht_mcs);
 	RTW_PRINT_SEL(m, "interval_ms=%u\n", adapter->p4oc_ra_interval_ms);
 	RTW_PRINT_SEL(m, "up_hysteresis=%u\n", adapter->p4oc_ra_up_hysteresis);
@@ -3095,7 +3096,7 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 	struct net_device *dev = data;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 	char tmp[64];
-	unsigned int en = 0, max_mcs = 7, interval = 20, up_hyst = 3, probe_step = 2;
+	unsigned int en = 0, max_mcs = 7, interval = 20, up_hyst = 3, probe_step = 2, simple_mode = 1;
 	unsigned int retry_th_high = 45, retry_th_low = 30, cooldown_high = 3, cooldown_low = 2;
 	int rssi_th_offset = 0;
 	unsigned int rssi_up_gap = 3;
@@ -3113,12 +3114,14 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 		return count;
 
 	tmp[count - 1] = '\0';
-	num = sscanf(tmp, "%u %u %u %u %u %u %u %u %u %d %u", &en, &max_mcs, &interval, &up_hyst, &probe_step, &retry_th_high, &retry_th_low, &cooldown_high, &cooldown_low, &rssi_th_offset, &rssi_up_gap);
+	num = sscanf(tmp, "%u %u %u %u %u %u %u %u %u %d %u %u", &en, &max_mcs, &interval, &up_hyst, &probe_step, &retry_th_high, &retry_th_low, &cooldown_high, &cooldown_low, &rssi_th_offset, &rssi_up_gap, &simple_mode);
 	if (num < 1)
 		return count;
 
 	if (num >= 1)
 		adapter->p4oc_ra_enable = en ? 1 : 0;
+	if (num >= 12)
+		adapter->p4oc_simple_mode = simple_mode ? 1 : 0;
 	if (num >= 2)
 		adapter->p4oc_ra_max_ht_mcs = max_mcs > 31 ? 31 : (u8)max_mcs;
 	if (num >= 3)

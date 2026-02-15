@@ -37,6 +37,13 @@ static boolean phydm_p4oc_ra_enabled(struct dm_struct *dm)
 	return (adapter && adapter->p4oc_ra_enable) ? true : false;
 }
 
+static boolean phydm_p4oc_simple_enabled(struct dm_struct *dm)
+{
+	PADAPTER adapter = (PADAPTER)dm->adapter;
+
+	return (adapter && adapter->p4oc_ra_enable && adapter->p4oc_simple_mode) ? true : false;
+}
+
 static u64 phydm_p4oc_ht_cap_mask(struct dm_struct *dm)
 {
 	PADAPTER adapter = (PADAPTER)dm->adapter;
@@ -1191,7 +1198,8 @@ u64 phydm_get_bb_mod_ra_mask(void *dm_void, u8 sta_idx)
 #if (DM_ODM_SUPPORT_TYPE == ODM_CE)
 	if (phydm_p4oc_ra_enabled(dm)) {
 		ra_mask_bitmap &= phydm_p4oc_ht_cap_mask(dm);
-		ra_mask_bitmap &= phydm_p4oc_probe_step_mask(dm, sta);
+		if (!phydm_p4oc_simple_enabled(dm))
+			ra_mask_bitmap &= phydm_p4oc_probe_step_mask(dm, sta);
 
 		/* Prevent accidental CCK fallback when current wireless mode has no CCK */
 		if (!(wrls_mode & WIRELESS_CCK))
@@ -1571,6 +1579,7 @@ void phydm_ra_mask_watchdog(void *dm_void)
 	u64 old_ra_mask = 0;
 	u64 new_ra_mask = 0;
 	boolean p4oc_mode = false;
+	boolean p4oc_adv_mode = false;
 	u8 retry_th_high = 45, retry_th_low = 30;
 	u8 cooldown_high = 3, cooldown_low = 2;
 
@@ -1585,6 +1594,7 @@ void phydm_ra_mask_watchdog(void *dm_void)
 	if (p4oc_mode) {
 		PADAPTER adapter = (PADAPTER)dm->adapter;
 
+		p4oc_adv_mode = !adapter->p4oc_simple_mode;
 		retry_th_high = adapter->p4oc_retry_th_high;
 		retry_th_low = adapter->p4oc_retry_th_low;
 		cooldown_high = adapter->p4oc_cooldown_high;
@@ -1657,7 +1667,7 @@ void phydm_ra_mask_watchdog(void *dm_void)
 
 #if (DM_ODM_SUPPORT_TYPE == ODM_CE)
 		retry_ratio_use = ra->curr_retry_ratio;
-		if (p4oc_mode) {
+		if (p4oc_adv_mode) {
 			/* EWMA smoothing for retry ratio to avoid overreacting to spikes */
 			retry_ratio_use = (ra_t->p4oc_retry_ewma[sta_idx] * 3 + ra->curr_retry_ratio) >> 2;
 			ra_t->p4oc_retry_ewma[sta_idx] = retry_ratio_use;
@@ -1685,7 +1695,7 @@ void phydm_ra_mask_watchdog(void *dm_void)
 
 			old_rssi_lv = ra->rssi_level;
 #if (DM_ODM_SUPPORT_TYPE == ODM_CE)
-			if (p4oc_mode && old_rssi_lv != rssi_lv_new) {
+			if (p4oc_adv_mode && old_rssi_lv != rssi_lv_new) {
 				old_ra_mask = phydm_get_bb_mod_ra_mask(dm, sta_idx);
 				ra->rssi_level = rssi_lv_new;
 				new_ra_mask = phydm_get_bb_mod_ra_mask(dm, sta_idx);
@@ -1710,7 +1720,7 @@ void phydm_ra_mask_watchdog(void *dm_void)
 			if (ra_t->record_ra_info)
 				ra_t->record_ra_info(dm, sta_idx, sta, ra_mask);
 #if (DM_ODM_SUPPORT_TYPE == ODM_CE)
-			if (p4oc_mode)
+			if (p4oc_adv_mode)
 				ra_t->p4oc_up_pending[sta_idx] = 0;
 #endif
 

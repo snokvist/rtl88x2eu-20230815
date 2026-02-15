@@ -2011,6 +2011,7 @@ struct _ADAPTER {
 	u8 fix_bw;
 	u8 data_fb; /* data rate fallback, valid only when fix_rate is not 0xff */
 	u8 p4oc_ra_enable; /* 1: enable link-stability RA mode */
+	u8 p4oc_simple_mode; /* 1: minimal deterministic cap-only policy */
 	u8 p4oc_ra_max_ht_mcs; /* cap HT rates to MCS0..N in stability mode */
 	u16 p4oc_ra_interval_ms; /* dynamic check period in stability mode */
 	u8 p4oc_ra_up_hysteresis; /* cycles required before allowing rate-up */

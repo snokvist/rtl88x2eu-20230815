@@ -83,3 +83,11 @@ reusing existing PHYDM RA mask and watchdog mechanisms.
 - Remaining gap:
   - queue/backlog not yet wired as explicit emergency downshift signal.
   - theoretical kbps output currently focused on HT1SS mapping (legacy/VHT path prints rate label but no full theoretical mapping yet).
+
+
+## Next simplification step (implemented)
+
+- Introduce `simple_mode` under `p4oc_ra` control and make it default `1`.
+- In simple mode, keep only: fast interval + HT MCS cap + non-CCK guard for non-CCK links.
+- Bypass advanced retry EWMA/cooldown/hysteresis shaping unless `simple_mode=0`.
+- This reduces interacting knobs and makes behavior more deterministic in field deployments.

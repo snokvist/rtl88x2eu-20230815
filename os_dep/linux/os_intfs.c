@@ -2673,6 +2673,7 @@ u8 rtw_init_default_value(_adapter *padapter)
 	padapter->data_fb = 0;
 	padapter->fix_bw = 0xFF;
 	padapter->p4oc_ra_enable = 0;
+	padapter->p4oc_simple_mode = 1;
 	padapter->p4oc_ra_max_ht_mcs = 7;
 	padapter->p4oc_ra_interval_ms = 20;
 	padapter->p4oc_ra_up_hysteresis = 3;
@@ -3152,6 +3153,7 @@ u8 rtw_init_drv_sw(_adapter *padapter)
 	padapter->setband = WIFI_FREQUENCY_BAND_AUTO;
 	padapter->fix_rate = 0xFF;
 	padapter->p4oc_ra_enable = 0;
+	padapter->p4oc_simple_mode = 1;
 	padapter->p4oc_ra_max_ht_mcs = 7;
 	padapter->p4oc_ra_interval_ms = 20;
 	padapter->p4oc_ra_up_hysteresis = 3;

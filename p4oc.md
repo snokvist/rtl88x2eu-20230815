@@ -30,7 +30,7 @@ A new proc entry is exposed per interface:
 ### Write format
 
 ```sh
-# echo "<enable> [max_ht_mcs] [interval_ms] [up_hysteresis] [probe_step] [retry_hi] [retry_low] [cooldown_hi] [cooldown_low] [rssi_th_ofst] [rssi_up_gap]" > p4oc_ra
+# echo "<enable> [max_ht_mcs] [interval_ms] [up_hysteresis] [probe_step] [retry_hi] [retry_low] [cooldown_hi] [cooldown_low] [rssi_th_ofst] [rssi_up_gap] [simple_mode]" > p4oc_ra
 ```
 
 ### Examples
@@ -40,7 +40,7 @@ A new proc entry is exposed per interface:
 echo "1" > /proc/net/<driver>/<iface>/p4oc_ra
 
 # Explicit settings (recommended starting point)
-echo "1 7 20 3 2 45 30 3 2 0 3" > /proc/net/<driver>/<iface>/p4oc_ra
+echo "1 7 20 3 2 45 30 3 2 0 3 1" > /proc/net/<driver>/<iface>/p4oc_ra
 
 # Disable
  echo "0" > /proc/net/<driver>/<iface>/p4oc_ra
@@ -54,6 +54,7 @@ cat /proc/net/<driver>/<iface>/p4oc_ra
 
 Readback includes:
 - `enable`
+- `simple_mode` (1=cap-only deterministic policy, 0=advanced retry/hysteresis path)
 - `max_ht_mcs`
 - `interval_ms`
 - `up_hysteresis`
@@ -76,6 +77,19 @@ Readback includes:
 
 So seeing e.g. `rx bitrate ... MCS14` while `tx bitrate ... MCS3` can still be consistent with P4OC
 TX constraints.
+
+
+## 2.1 Simpler policy recommendation
+
+To prioritize reliability and reduce tuning complexity, use **simple mode**:
+- `simple_mode=1` (default): keep fast timer + HT cap, disable advanced retry/cooldown/hysteresis shaping.
+- `simple_mode=0`: enable advanced shaping knobs for lab tuning.
+
+Practical starting command:
+
+```sh
+echo "1 3 50 3 2 45 30 3 2 0 3 1" > /proc/net/<driver>/<iface>/p4oc_ra
+```
 
 ## 3) Current rate-selection trigger logic (important)
 
@@ -220,7 +234,7 @@ So the effective update cadence is:
 If you want streamer checks at 20–50 ms, set:
 
 ```sh
-echo "1 7 20 3 2 45 30 3 2 0 3" > /proc/net/<driver>/<iface>/p4oc_ra
+echo "1 7 20 3 2 45 30 3 2 0 3 1" > /proc/net/<driver>/<iface>/p4oc_ra
 ```
 
 Then poll `p4oc_bw_hint` at or slightly above `poll_recommend_ms`.
