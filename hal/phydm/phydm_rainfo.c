@@ -37,13 +37,6 @@ static boolean phydm_p4oc_ra_enabled(struct dm_struct *dm)
 	return (adapter && adapter->p4oc_ra_enable) ? true : false;
 }
 
-static boolean phydm_p4oc_simple_enabled(struct dm_struct *dm)
-{
-	PADAPTER adapter = (PADAPTER)dm->adapter;
-
-	return (adapter && adapter->p4oc_ra_enable && adapter->p4oc_simple_mode) ? true : false;
-}
-
 static u64 phydm_p4oc_ht_cap_mask(struct dm_struct *dm)
 {
 	PADAPTER adapter = (PADAPTER)dm->adapter;
@@ -62,44 +55,6 @@ static u64 phydm_p4oc_ht_cap_mask(struct dm_struct *dm)
 	return mask;
 }
 
-static u64 phydm_p4oc_probe_step_mask(struct dm_struct *dm,
-					      struct cmn_sta_info *sta)
-{
-	PADAPTER adapter = (PADAPTER)dm->adapter;
-	u8 probe_step = 0;
-	u8 max_ht_mcs = 7;
-	u8 curr_rate = 0;
-	u8 curr_mcs = 0;
-	u8 probe_mcs = 0;
-	u64 mask = 0x0fff;
-
-	if (!adapter || !is_sta_active(sta))
-		return 0xffffffffffffffffULL;
-
-	probe_step = adapter->p4oc_ra_probe_step;
-	if (probe_step > 4)
-		probe_step = 4;
-
-	if (probe_step == 0)
-		return 0xffffffffffffffffULL;
-
-	max_ht_mcs = adapter->p4oc_ra_max_ht_mcs;
-	if (max_ht_mcs > 31)
-		max_ht_mcs = 31;
-
-	curr_rate = sta->ra_info.curr_tx_rate & 0x7f;
-	if (curr_rate < ODM_RATEMCS0 || curr_rate > ODM_RATEMCS31)
-		return phydm_p4oc_ht_cap_mask(dm);
-
-	curr_mcs = curr_rate - ODM_RATEMCS0;
-	probe_mcs = curr_mcs + probe_step;
-	if (probe_mcs > max_ht_mcs)
-		probe_mcs = max_ht_mcs;
-
-	mask |= (((u64)1 << (probe_mcs + 1)) - 1) << 12;
-
-	return mask;
-}
 #endif
 
 boolean phydm_is_vht_rate(void *dm_void, u8 rate)
@@ -1198,8 +1153,6 @@ u64 phydm_get_bb_mod_ra_mask(void *dm_void, u8 sta_idx)
 #if (DM_ODM_SUPPORT_TYPE == ODM_CE)
 	if (phydm_p4oc_ra_enabled(dm)) {
 		ra_mask_bitmap &= phydm_p4oc_ht_cap_mask(dm);
-		if (!phydm_p4oc_simple_enabled(dm))
-			ra_mask_bitmap &= phydm_p4oc_probe_step_mask(dm, sta);
 
 		/* Prevent accidental CCK fallback when current wireless mode has no CCK */
 		if (!(wrls_mode & WIRELESS_CCK))
@@ -1574,14 +1527,7 @@ void phydm_ra_mask_watchdog(void *dm_void)
 	u64 ra_mask;
 	u8 rssi_lv_new;
 	u8 rssi = 0;
-	u8 old_rssi_lv = 0;
-	u8 retry_ratio_use = 0;
-	u64 old_ra_mask = 0;
-	u64 new_ra_mask = 0;
 	boolean p4oc_mode = false;
-	boolean p4oc_adv_mode = false;
-	u8 retry_th_high = 45, retry_th_low = 30;
-	u8 cooldown_high = 3, cooldown_low = 2;
 
 	if (!(dm->support_ability & ODM_BB_RA_MASK))
 		return;
@@ -1591,15 +1537,6 @@ void phydm_ra_mask_watchdog(void *dm_void)
 
 #if (DM_ODM_SUPPORT_TYPE == ODM_CE)
 	p4oc_mode = phydm_p4oc_ra_enabled(dm);
-	if (p4oc_mode) {
-		PADAPTER adapter = (PADAPTER)dm->adapter;
-
-		p4oc_adv_mode = !adapter->p4oc_simple_mode;
-		retry_th_high = adapter->p4oc_retry_th_high;
-		retry_th_low = adapter->p4oc_retry_th_low;
-		cooldown_high = adapter->p4oc_cooldown_high;
-		cooldown_low = adapter->p4oc_cooldown_low;
-	}
 #endif
 
 	if (!p4oc_mode && (dm->phydm_sys_up_time % 2) == 1)
@@ -1665,53 +1602,11 @@ void phydm_ra_mask_watchdog(void *dm_void)
 
 		rssi_lv_new = phydm_rssi_lv_dec(dm, (u32)rssi, ra->rssi_level);
 
-#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
-		retry_ratio_use = ra->curr_retry_ratio;
-		if (p4oc_adv_mode) {
-			/* EWMA smoothing for retry ratio to avoid overreacting to spikes */
-			retry_ratio_use = (ra_t->p4oc_retry_ewma[sta_idx] * 3 + ra->curr_retry_ratio) >> 2;
-			ra_t->p4oc_retry_ewma[sta_idx] = retry_ratio_use;
-
-			if (retry_ratio_use >= retry_th_high) {
-				if (rssi_lv_new <= (RA_FLOOR_TABLE_SIZE - 3))
-					rssi_lv_new += 2;
-				else
-					rssi_lv_new = RA_FLOOR_TABLE_SIZE - 1;
-				ra_t->p4oc_up_cooldown[sta_idx] = cooldown_high;
-			} else if (retry_ratio_use >= retry_th_low) {
-				if (rssi_lv_new < (RA_FLOOR_TABLE_SIZE - 1))
-					rssi_lv_new += 1;
-				ra_t->p4oc_up_cooldown[sta_idx] = cooldown_low;
-			} else if (ra_t->p4oc_up_cooldown[sta_idx] > 0) {
-				ra_t->p4oc_up_cooldown[sta_idx]--;
-			}
-		}
-#endif
 
 		if (ra->rssi_level != rssi_lv_new ||
 		    (force_ra_mask_en && dm->number_linked_client < 10)) {
 			PHYDM_DBG(dm, DBG_RA_MASK, "RSSI LV:((%d))->((%d))\n",
 				  ra->rssi_level, rssi_lv_new);
-
-			old_rssi_lv = ra->rssi_level;
-#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
-			if (p4oc_adv_mode && old_rssi_lv != rssi_lv_new) {
-				old_ra_mask = phydm_get_bb_mod_ra_mask(dm, sta_idx);
-				ra->rssi_level = rssi_lv_new;
-				new_ra_mask = phydm_get_bb_mod_ra_mask(dm, sta_idx);
-				ra->rssi_level = old_rssi_lv;
-
-				if ((new_ra_mask & (~old_ra_mask)) != 0) {
-					if (ra_t->p4oc_up_cooldown[sta_idx] > 0)
-						continue;
-					ra_t->p4oc_up_pending[sta_idx]++;
-					if (ra_t->p4oc_up_pending[sta_idx] < ((PADAPTER)dm->adapter)->p4oc_ra_up_hysteresis)
-						continue;
-				} else {
-					ra_t->p4oc_up_pending[sta_idx] = 0;
-				}
-			}
-#endif
 
 			ra->rssi_level = rssi_lv_new;
 
@@ -1719,10 +1614,6 @@ void phydm_ra_mask_watchdog(void *dm_void)
 
 			if (ra_t->record_ra_info)
 				ra_t->record_ra_info(dm, sta_idx, sta, ra_mask);
-#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
-			if (p4oc_adv_mode)
-				ra_t->p4oc_up_pending[sta_idx] = 0;
-#endif
 
 			#if (RTL8188E_SUPPORT) && (RATE_ADAPTIVE_SUPPORT)
 			if (dm->support_ic_type == ODM_RTL8188E)
@@ -1896,15 +1787,6 @@ u8 phydm_rssi_lv_dec(void *dm_void, u32 rssi, u8 ratr_state)
 	u8 i;
 	u8 floor_up_gap = RA_FLOOR_UP_GAP;
 	s8 floor_th_ofst = 0;
-
-#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
-	if (phydm_p4oc_ra_enabled(dm)) {
-		PADAPTER adapter = (PADAPTER)dm->adapter;
-
-		floor_up_gap = adapter->p4oc_rssi_up_gap;
-		floor_th_ofst = adapter->p4oc_rssi_th_offset;
-	}
-#endif
 
 	PHYDM_DBG(dm, DBG_RA_MASK,
 		  "curr RA level=(%d), Table_ori=[%d, %d, %d, %d, %d, %d]\n",

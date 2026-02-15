@@ -1,24 +1,15 @@
 #!/bin/sh
 # Busybox-friendly P4OC RA config helper
 # Usage:
-#   p4oc_ra_config.sh <iface> [enable] [max_ht_mcs] [interval_ms] [up_hysteresis] [probe_step] [retry_hi] [retry_low] [cooldown_hi] [cooldown_low] [rssi_th_ofst] [rssi_up_gap] [simple_mode]
+#   p4oc_ra_config.sh <iface> [enable] [max_ht_mcs] [interval_ms]
 
 IFACE="$1"
 EN="${2:-1}"
 MAXMCS="${3:-7}"
 INTV="${4:-20}"
-HYST="${5:-3}"
-PSTEP="${6:-2}"
-RHI="${7:-45}"
-RLO="${8:-30}"
-CHI="${9:-3}"
-CLO="${10:-2}"
-RTHO="${11:-0}"
-RUPG="${12:-3}"
-SMPL="${13:-1}"
 
 if [ -z "$IFACE" ]; then
-  echo "usage: $0 <iface> [enable] [max_ht_mcs] [interval_ms] [up_hysteresis] [probe_step] [retry_hi] [retry_low] [cooldown_hi] [cooldown_low] [rssi_th_ofst] [rssi_up_gap] [simple_mode]" >&2
+  echo "usage: $0 <iface> [enable] [max_ht_mcs] [interval_ms]" >&2
   exit 1
 fi
 
@@ -38,5 +29,5 @@ if [ -z "$PFILE" ]; then
   exit 2
 fi
 
-echo "$EN $MAXMCS $INTV $HYST $PSTEP $RHI $RLO $CHI $CLO $RTHO $RUPG $SMPL" > "$PFILE" || exit 3
+echo "$EN $MAXMCS $INTV" > "$PFILE" || exit 3
 echo "configured: $(cat "$PFILE")"

@@ -2011,17 +2011,8 @@ struct _ADAPTER {
 	u8 fix_bw;
 	u8 data_fb; /* data rate fallback, valid only when fix_rate is not 0xff */
 	u8 p4oc_ra_enable; /* 1: enable link-stability RA mode */
-	u8 p4oc_simple_mode; /* 1: minimal deterministic cap-only policy */
 	u8 p4oc_ra_max_ht_mcs; /* cap HT rates to MCS0..N in stability mode */
 	u16 p4oc_ra_interval_ms; /* dynamic check period in stability mode */
-	u8 p4oc_ra_up_hysteresis; /* cycles required before allowing rate-up */
-	u8 p4oc_ra_probe_step; /* target probe step (debug/control point) */
-	u8 p4oc_retry_th_high; /* high retry threshold for strong down-bias */
-	u8 p4oc_retry_th_low; /* low retry threshold for moderate down-bias */
-	u8 p4oc_cooldown_high; /* cooldown cycles set when retry >= high */
-	u8 p4oc_cooldown_low; /* cooldown cycles set when retry >= low */
-	s8 p4oc_rssi_th_offset; /* offset applied to RSSI floor table in P4OC */
-	u8 p4oc_rssi_up_gap; /* per-level upward hysteresis gap in P4OC */
 	u8 power_offset;
 	u8 driver_tx_bw_mode;
 	u8 rsvd_page_offset;
