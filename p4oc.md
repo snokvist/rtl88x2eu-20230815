@@ -44,3 +44,9 @@ Readback fields:
 
 ## Bandwidth hint
 Read-only telemetry: `/proc/net/<driver>/<iface>/p4oc_bw_hint`
+
+
+## Troubleshooting `ra_config.sh`
+
+`tools/p4oc/p4oc_ra_config.sh` now writes then re-reads `p4oc_ra` and exits non-zero if requested values are not applied.
+This helps catch cases where manual config appears to do nothing.
