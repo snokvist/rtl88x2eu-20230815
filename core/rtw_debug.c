@@ -2980,22 +2980,31 @@ int proc_get_p4oc_ra_cfg(struct seq_file *m, void *v)
 
 int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 {
+	static const u32 ht20_kbps[8] = {6500, 13000, 19500, 26000, 39000, 52000, 58500, 65000};
+	static const u32 ht40_kbps[8] = {13500, 27000, 40500, 54000, 81000, 108000, 121500, 135000};
 	struct net_device *dev = m->private;
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 	struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
-	u32 tx_mbps = dvobj->traffic_stat.cur_tx_tp;
-	u32 rx_mbps = dvobj->traffic_stat.cur_rx_tp;
+	struct dm_struct *dm = adapter_to_phydm(adapter);
+	struct ra_table *ra_t = dm ? &dm->dm_ra_table : NULL;
+	struct sta_info *psta = NULL;
 	u32 interval_ms = dvobj->traffic_stat.tp_calc_interval_ms;
 	u32 tx_kbps = 0, rx_kbps = 0;
 	u32 app_hint_kbps = 0;
-	u32 app_hint_mbps = 0;
+	u8 curr_rate = DESC_RATE1M;
+	u8 curr_mcs = 0xFF;
+	u8 allowed_max_mcs = 0xFF;
+	s8 rssi = 0;
+	u8 retry_ewma = 0;
+	u8 cooldown = 0;
+	u8 up_pending = 0;
+	u8 sta_idx = 0xFF;
+	u32 theo_curr_kbps = 0;
+	u32 theo_allowed_kbps = 0;
+	const char *trend = "unknown";
+	bool sgi = _FALSE;
+	u8 bw = CHANNEL_WIDTH_20;
 
-	/*
-	 * Conservative app-side bitrate hint:
-	 * - use lower direction throughput as base
-	 * - if one direction is idle, use the active direction
-	 * - keep ~20% guard-band for jitter/retransmissions
-	 */
 	if (interval_ms == 0)
 		interval_ms = 1;
 
@@ -3008,22 +3017,70 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 		app_hint_kbps = tx_kbps > rx_kbps ? tx_kbps : rx_kbps;
 
 	app_hint_kbps = (app_hint_kbps * 8) / 10;
-	app_hint_mbps = app_hint_kbps / 1000;
-	if (app_hint_mbps == 0 && app_hint_kbps > 0)
-		app_hint_mbps = 1;
 
-	RTW_PRINT_SEL(m, "tx_mbps=%u\n", tx_mbps);
-	RTW_PRINT_SEL(m, "rx_mbps=%u\n", rx_mbps);
+	psta = rtw_get_stainfo(&adapter->stapriv, get_bssid(&adapter->mlmepriv));
+	if (psta) {
+		curr_rate = rtw_get_current_tx_rate(adapter, psta) & 0x7f;
+		sgi = rtw_get_current_tx_sgi(adapter, psta);
+		bw = psta->cmn.ra_info.curr_tx_bw;
+		rssi = psta->cmn.rssi_stat.rssi;
+		sta_idx = psta->cmn.mac_id;
+
+		if (curr_rate >= DESC_RATEMCS0 && curr_rate <= DESC_RATEMCS7) {
+			curr_mcs = curr_rate - DESC_RATEMCS0;
+			allowed_max_mcs = adapter->p4oc_ra_max_ht_mcs;
+			if (adapter->p4oc_ra_probe_step)
+				allowed_max_mcs = curr_mcs + adapter->p4oc_ra_probe_step < allowed_max_mcs ?
+					(curr_mcs + adapter->p4oc_ra_probe_step) : allowed_max_mcs;
+			if (allowed_max_mcs > 7)
+				allowed_max_mcs = 7;
+			theo_curr_kbps = (bw == CHANNEL_WIDTH_40 ? ht40_kbps[curr_mcs] : ht20_kbps[curr_mcs]);
+			theo_allowed_kbps = (bw == CHANNEL_WIDTH_40 ? ht40_kbps[allowed_max_mcs] : ht20_kbps[allowed_max_mcs]);
+			if (sgi) {
+				theo_curr_kbps = (theo_curr_kbps * 11) / 10;
+				theo_allowed_kbps = (theo_allowed_kbps * 11) / 10;
+			}
+		}
+	}
+
+	if (adapter->p4oc_ra_enable)
+		trend = "hold";
+	else
+		trend = "legacy_ra";
+
+	if (ra_t && sta_idx < ODM_ASSOCIATE_ENTRY_NUM) {
+		retry_ewma = ra_t->p4oc_retry_ewma[sta_idx];
+		cooldown = ra_t->p4oc_up_cooldown[sta_idx];
+		up_pending = ra_t->p4oc_up_pending[sta_idx];
+		if (adapter->p4oc_ra_enable) {
+			if (retry_ewma >= adapter->p4oc_retry_th_low)
+				trend = "down";
+			else if (cooldown > 0)
+				trend = "down_cooldown";
+			else if (up_pending + 1 >= adapter->p4oc_ra_up_hysteresis)
+				trend = "up_candidate";
+		}
+	}
+
 	RTW_PRINT_SEL(m, "tx_kbps=%u\n", tx_kbps);
 	RTW_PRINT_SEL(m, "rx_kbps=%u\n", rx_kbps);
 	RTW_PRINT_SEL(m, "sample_interval_ms=%u\n", interval_ms);
 	RTW_PRINT_SEL(m, "app_hint_kbps=%u\n", app_hint_kbps);
-	RTW_PRINT_SEL(m, "app_hint_mbps=%u\n", app_hint_mbps);
 	RTW_PRINT_SEL(m, "p4oc_enabled=%u\n", adapter->p4oc_ra_enable);
 	RTW_PRINT_SEL(m, "poll_recommend_ms=%u\n", rtw_dynamic_chk_timer_interval_ms(adapter));
+	RTW_PRINT_SEL(m, "curr_tx_rate=%s\n", HDATA_RATE(curr_rate));
+	RTW_PRINT_SEL(m, "curr_mcs=%d\n", curr_mcs == 0xFF ? -1 : curr_mcs);
+	RTW_PRINT_SEL(m, "curr_rssi=%d\n", rssi);
+	RTW_PRINT_SEL(m, "retry_ewma=%u\n", retry_ewma);
+	RTW_PRINT_SEL(m, "up_cooldown=%u\n", cooldown);
+	RTW_PRINT_SEL(m, "up_pending=%u\n", up_pending);
+	RTW_PRINT_SEL(m, "trend=%s\n", trend);
+	RTW_PRINT_SEL(m, "theoretical_current_kbps=%u\n", theo_curr_kbps);
+	RTW_PRINT_SEL(m, "theoretical_allowed_kbps=%u\n", theo_allowed_kbps);
 
 	return 0;
 }
+
 
 ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
 {

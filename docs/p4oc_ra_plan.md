@@ -65,3 +65,19 @@ reusing existing PHYDM RA mask and watchdog mechanisms.
 - Expected effect: lower oscillation and fewer aggressive upshifts after transient loss.
 - Remaining gap: no explicit queue-depth/backlog driven emergency downshift yet.
 - Observability gap: `tx_rate_bmp` may not match instantaneous rate, so combine with `iw ... tx bitrate`.
+
+
+## Recommended next steps (v3 status)
+1. Queue/backlog emergency downshift guardrail. **Planned**.
+2. Extend `p4oc_bw_hint` with per-link telemetry (`curr_mcs`, `rssi`, trend, theoretical kbps). **Implemented**.
+3. Remove Mbps-only dependency from app side, keep kbps-centric hint. **Implemented**.
+4. Add AP-mode peer selection for telemetry when multiple stations linked. **Planned**.
+
+## Evaluation (v3)
+- Compared to baseline and v2:
+  - App hint now better reflects low-rate reality (kbps-first output).
+  - Runtime visibility now includes current rate/MCS/RSSI and a trend indicator derived from P4OC state.
+  - Adds theoretical current/allowed kbps estimates for HT20/40 1SS path, improving operator intuition.
+- Remaining gap:
+  - queue/backlog not yet wired as explicit emergency downshift signal.
+  - theoretical kbps output currently focused on HT1SS mapping (legacy/VHT path prints rate label but no full theoretical mapping yet).

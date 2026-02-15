@@ -30,7 +30,7 @@ A new proc entry is exposed per interface:
 ### Write format
 
 ```sh
-# echo "<enable> [max_ht_mcs] [interval_ms] [up_hysteresis] [probe_step]" > p4oc_ra
+# echo "<enable> [max_ht_mcs] [interval_ms] [up_hysteresis] [probe_step] [retry_hi] [retry_low] [cooldown_hi] [cooldown_low]" > p4oc_ra
 ```
 
 ### Examples
@@ -172,18 +172,23 @@ A read-only proc endpoint is provided for app-side bitrate adaptation:
 `/proc/net/<driver>/<iface>/p4oc_bw_hint`
 
 Output fields:
-- `tx_mbps`: current TX throughput estimate from driver traffic stats.
-- `rx_mbps`: current RX throughput estimate from driver traffic stats.
-- `app_hint_mbps`: conservative bitrate suggestion for app encoders/ABR logic
+- `tx_kbps`: current TX throughput estimate from driver traffic stats.
+- `rx_kbps`: current RX throughput estimate from driver traffic stats.
+- `app_hint_kbps`: conservative bitrate suggestion for app encoders/ABR logic
   (`min(tx,rx)` when bidirectional traffic exists, otherwise max active direction,
   then 20% guard band).
-- `p4oc_enabled`: whether P4OC mode is enabled.
 - `sample_interval_ms`: last interval used for throughput sample calculation.
 - `poll_recommend_ms`: recommended polling period (same source as dynamic check timer).
+- `curr_tx_rate`: current TX rate label from driver (`HDATA_RATE`).
+- `curr_mcs`: current HT MCS index when in HT1SS path (otherwise `-1`).
+- `curr_rssi`: current STA RSSI.
+- `trend`: current P4OC tendency estimate (`down`, `down_cooldown`, `hold`, `up_candidate`, `legacy_ra`).
+- `theoretical_current_kbps`: theoretical PHY kbps for current selected HT MCS (HT20/HT40, SGI-adjusted).
+- `theoretical_allowed_kbps`: theoretical PHY kbps for current allowed top HT MCS under cap/probe policy.
 
 Example integration for streamers:
 1. Poll every 0.5s–1s.
-2. Use `app_hint_mbps * 0.8` as target video bitrate ceiling.
+2. Use `app_hint_kbps` as target video bitrate ceiling (already guard-banded).
 3. Only increase application bitrate after N consecutive higher samples
    (to avoid oscillations), but decrease immediately on drops.
 
