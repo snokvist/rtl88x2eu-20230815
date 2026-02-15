@@ -3002,6 +3002,7 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	u8 sta_idx = 0xFF;
 	u32 theo_curr_kbps = 0;
 	u32 theo_allowed_kbps = 0;
+	u64 curr_ramask = 0;
 	const char *trend = "unknown";
 	bool sgi = _FALSE;
 	u8 bw = CHANNEL_WIDTH_20;
@@ -3022,6 +3023,7 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 		bw = psta->cmn.ra_info.curr_tx_bw;
 		rssi = psta->cmn.rssi_stat.rssi;
 		sta_idx = psta->cmn.mac_id;
+		curr_ramask = psta->cmn.ra_info.ramask;
 
 		allowed_max_mcs = adapter->p4oc_ra_max_ht_mcs;
 		if (allowed_max_mcs > 7)
@@ -3082,6 +3084,7 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	RTW_PRINT_SEL(m, "trend=%s\n", trend);
 	RTW_PRINT_SEL(m, "theoretical_current_kbps=%u\n", theo_curr_kbps);
 	RTW_PRINT_SEL(m, "theoretical_allowed_kbps=%u\n", theo_allowed_kbps);
+	RTW_PRINT_SEL(m, "curr_ramask=0x%016llx\n", curr_ramask);
 
 	return 0;
 }

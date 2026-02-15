@@ -195,8 +195,11 @@ Output fields:
 - `curr_bw`: current TX bandwidth selected/used (`20MHz` / `40MHz` / etc).
 - `curr_rssi`: current STA RSSI.
 - `trend`: current P4OC tendency estimate (`down`, `down_cooldown`, `hold`, `up_candidate`, `legacy_ra`).
+
+Note: in P4OC mode, if the current wireless mode does not include CCK, CCK bits are stripped from the effective RA mask to avoid unintended `CCK_1M` fallback.
 - `theoretical_current_kbps`: theoretical PHY kbps for current selected TX rate (HT MCS when available, otherwise current legacy/non-HT rate), SGI-adjusted where applicable.
 - `theoretical_allowed_kbps`: theoretical PHY kbps for current allowed top HT MCS under cap/probe policy.
+- `curr_ramask`: currently applied RA mask bitmap (hex) for low-level fallback debugging.
 
 Example integration for streamers:
 1. Poll every 0.5s–1s.

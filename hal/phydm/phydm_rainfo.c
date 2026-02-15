@@ -1192,6 +1192,10 @@ u64 phydm_get_bb_mod_ra_mask(void *dm_void, u8 sta_idx)
 	if (phydm_p4oc_ra_enabled(dm)) {
 		ra_mask_bitmap &= phydm_p4oc_ht_cap_mask(dm);
 		ra_mask_bitmap &= phydm_p4oc_probe_step_mask(dm, sta);
+
+		/* Prevent accidental CCK fallback when current wireless mode has no CCK */
+		if (!(wrls_mode & WIRELESS_CCK))
+			ra_mask_bitmap &= ~0xFULL;
 	}
 #endif
 
