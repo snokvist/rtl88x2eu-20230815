@@ -190,8 +190,8 @@ Output fields:
   then 20% guard band).
 - `sample_interval_ms`: last interval used for throughput sample calculation.
 - `poll_recommend_ms`: recommended polling period (same source as dynamic check timer).
-- `curr_tx_rate`: current TX rate label from driver (`HDATA_RATE`).
 - `curr_mcs`: current HT MCS index when in HT1SS path (otherwise `-1`).
+- `curr_bw`: current TX bandwidth selected/used (`20MHz` / `40MHz` / etc).
 - `curr_rssi`: current STA RSSI.
 - `trend`: current P4OC tendency estimate (`down`, `down_cooldown`, `hold`, `up_candidate`, `legacy_ra`).
 - `theoretical_current_kbps`: theoretical PHY kbps for current selected HT MCS (HT20/HT40, SGI-adjusted).

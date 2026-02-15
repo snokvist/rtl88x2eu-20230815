@@ -3063,8 +3063,8 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	RTW_PRINT_SEL(m, "app_hint_kbps=%u\n", app_hint_kbps);
 	RTW_PRINT_SEL(m, "p4oc_enabled=%u\n", adapter->p4oc_ra_enable);
 	RTW_PRINT_SEL(m, "poll_recommend_ms=%u\n", rtw_dynamic_chk_timer_interval_ms(adapter));
-	RTW_PRINT_SEL(m, "curr_tx_rate=%s\n", HDATA_RATE(curr_rate));
 	RTW_PRINT_SEL(m, "curr_mcs=%d\n", curr_mcs == 0xFF ? -1 : curr_mcs);
+	RTW_PRINT_SEL(m, "curr_bw=%s\n", ch_width_str((enum channel_width)bw));
 	RTW_PRINT_SEL(m, "curr_rssi=%d\n", rssi);
 	RTW_PRINT_SEL(m, "retry_ewma=%u\n", retry_ewma);
 	RTW_PRINT_SEL(m, "up_cooldown=%u\n", cooldown);
