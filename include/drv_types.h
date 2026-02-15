@@ -2013,6 +2013,7 @@ struct _ADAPTER {
 	u8 p4oc_ra_enable; /* 1: enable link-stability RA mode */
 	u8 p4oc_ra_max_ht_mcs; /* cap HT rates to MCS0..N in stability mode */
 	u16 p4oc_ra_interval_ms; /* dynamic check period in stability mode */
+	s8 p4oc_rssi_th_offset; /* signed offset applied to RSSI floor thresholds in P4OC */
 	u8 power_offset;
 	u8 driver_tx_bw_mode;
 	u8 rsvd_page_offset;

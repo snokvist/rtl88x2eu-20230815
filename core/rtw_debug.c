@@ -2967,6 +2967,7 @@ int proc_get_p4oc_ra_cfg(struct seq_file *m, void *v)
 	RTW_PRINT_SEL(m, "enable=%u\n", adapter->p4oc_ra_enable);
 	RTW_PRINT_SEL(m, "max_ht_mcs=%u\n", adapter->p4oc_ra_max_ht_mcs);
 	RTW_PRINT_SEL(m, "interval_ms=%u\n", adapter->p4oc_ra_interval_ms);
+	RTW_PRINT_SEL(m, "rssi_th_offset=%d\n", adapter->p4oc_rssi_th_offset);
 	RTW_PRINT_SEL(m, "effective_interval_ms=%u\n", rtw_dynamic_chk_timer_interval_ms(adapter));
 
 	return 0;
@@ -3062,6 +3063,7 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
 	char tmp[64];
 	unsigned int en = 0, max_mcs = 7, interval = 20;
+	int rssi_th_ofst = 0;
 	int num;
 
 	if (count < 1)
@@ -3076,7 +3078,7 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 		return count;
 
 	tmp[count - 1] = '\0';
-	num = sscanf(tmp, "%u %u %u", &en, &max_mcs, &interval);
+	num = sscanf(tmp, "%u %u %u %d", &en, &max_mcs, &interval, &rssi_th_ofst);
 	if (num < 1)
 		return count;
 
@@ -3086,6 +3088,13 @@ ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_
 		adapter->p4oc_ra_max_ht_mcs = max_mcs > 31 ? 31 : (u8)max_mcs;
 	if (num >= 3)
 		adapter->p4oc_ra_interval_ms = interval > 1000 ? 1000 : (u16)interval;
+	if (num >= 4) {
+		if (rssi_th_ofst > 30)
+			rssi_th_ofst = 30;
+		if (rssi_th_ofst < -30)
+			rssi_th_ofst = -30;
+		adapter->p4oc_rssi_th_offset = (s8)rssi_th_ofst;
+	}
 
 	_set_timer(&adapter_to_dvobj(adapter)->dynamic_chk_timer, rtw_dynamic_chk_timer_interval_ms(adapter));
 

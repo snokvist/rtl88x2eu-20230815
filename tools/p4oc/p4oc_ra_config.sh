@@ -1,15 +1,16 @@
 #!/bin/sh
 # Busybox-friendly P4OC RA config helper
 # Usage:
-#   p4oc_ra_config.sh <iface> [enable] [max_ht_mcs] [interval_ms]
+#   p4oc_ra_config.sh <iface> [enable] [max_ht_mcs] [interval_ms] [rssi_th_ofst]
 
 IFACE="$1"
 EN="${2:-1}"
 MAXMCS="${3:-7}"
 INTV="${4:-20}"
+RTHO="${5:-0}"
 
 if [ -z "$IFACE" ]; then
-  echo "usage: $0 <iface> [enable] [max_ht_mcs] [interval_ms]" >&2
+  echo "usage: $0 <iface> [enable] [max_ht_mcs] [interval_ms] [rssi_th_ofst]" >&2
   exit 1
 fi
 
@@ -29,5 +30,5 @@ if [ -z "$PFILE" ]; then
   exit 2
 fi
 
-echo "$EN $MAXMCS $INTV" > "$PFILE" || exit 3
+echo "$EN $MAXMCS $INTV $RTHO" > "$PFILE" || exit 3
 echo "configured: $(cat "$PFILE")"

@@ -1788,6 +1788,14 @@ u8 phydm_rssi_lv_dec(void *dm_void, u32 rssi, u8 ratr_state)
 	u8 floor_up_gap = RA_FLOOR_UP_GAP;
 	s8 floor_th_ofst = 0;
 
+#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
+	if (phydm_p4oc_ra_enabled(dm)) {
+		PADAPTER adapter = (PADAPTER)dm->adapter;
+
+		floor_th_ofst = adapter->p4oc_rssi_th_offset;
+	}
+#endif
+
 	PHYDM_DBG(dm, DBG_RA_MASK,
 		  "curr RA level=(%d), Table_ori=[%d, %d, %d, %d, %d, %d]\n",
 		  ratr_state, rssi_lv_t[0], rssi_lv_t[1], rssi_lv_t[2],
