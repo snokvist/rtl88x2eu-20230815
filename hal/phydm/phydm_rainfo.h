@@ -217,6 +217,7 @@ struct ra_table {
 	u8	ra_mask_rpt_stamp;
 	u8 	ra_mask_buf[8];
 	u8	ra_ramask_byrssi;
+	u8	p4oc_up_pending[ODM_ASSOCIATE_ENTRY_NUM];
 };
 
 struct ra_mask_rpt_trig {

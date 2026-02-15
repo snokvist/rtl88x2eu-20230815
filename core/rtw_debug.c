@@ -2959,6 +2959,97 @@ ssize_t proc_set_rate_ctl(struct file *file, const char __user *buffer, size_t c
 	return count;
 }
 
+int proc_get_p4oc_ra_cfg(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+
+	RTW_PRINT_SEL(m, "enable=%u\n", adapter->p4oc_ra_enable);
+	RTW_PRINT_SEL(m, "max_ht_mcs=%u\n", adapter->p4oc_ra_max_ht_mcs);
+	RTW_PRINT_SEL(m, "interval_ms=%u\n", adapter->p4oc_ra_interval_ms);
+	RTW_PRINT_SEL(m, "up_hysteresis=%u\n", adapter->p4oc_ra_up_hysteresis);
+	RTW_PRINT_SEL(m, "probe_step=%u\n", adapter->p4oc_ra_probe_step);
+	RTW_PRINT_SEL(m, "effective_interval_ms=%u\n", rtw_dynamic_chk_timer_interval_ms(adapter));
+
+	return 0;
+}
+
+int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
+{
+	struct net_device *dev = m->private;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+	struct dvobj_priv *dvobj = adapter_to_dvobj(adapter);
+	u32 tx_mbps = dvobj->traffic_stat.cur_tx_tp;
+	u32 rx_mbps = dvobj->traffic_stat.cur_rx_tp;
+	u32 interval_ms = dvobj->traffic_stat.tp_calc_interval_ms;
+	u32 app_hint_mbps = 0;
+
+	/*
+	 * Conservative app-side bitrate hint:
+	 * - use lower direction throughput as base
+	 * - if one direction is idle, use the active direction
+	 * - keep ~20% guard-band for jitter/retransmissions
+	 */
+	if (tx_mbps && rx_mbps)
+		app_hint_mbps = tx_mbps < rx_mbps ? tx_mbps : rx_mbps;
+	else
+		app_hint_mbps = tx_mbps > rx_mbps ? tx_mbps : rx_mbps;
+
+	app_hint_mbps = (app_hint_mbps * 8) / 10;
+
+	RTW_PRINT_SEL(m, "tx_mbps=%u\n", tx_mbps);
+	RTW_PRINT_SEL(m, "rx_mbps=%u\n", rx_mbps);
+	RTW_PRINT_SEL(m, "sample_interval_ms=%u\n", interval_ms);
+	RTW_PRINT_SEL(m, "app_hint_mbps=%u\n", app_hint_mbps);
+	RTW_PRINT_SEL(m, "p4oc_enabled=%u\n", adapter->p4oc_ra_enable);
+	RTW_PRINT_SEL(m, "poll_recommend_ms=%u\n", rtw_dynamic_chk_timer_interval_ms(adapter));
+
+	return 0;
+}
+
+ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *adapter = (_adapter *)rtw_netdev_priv(dev);
+	char tmp[64];
+	unsigned int en = 0, max_mcs = 7, interval = 20, up_hyst = 3, probe_step = 2;
+	int num;
+
+	if (count < 1)
+		return -EFAULT;
+
+	if (count > sizeof(tmp)) {
+		rtw_warn_on(1);
+		return -EFAULT;
+	}
+
+	if (!buffer || copy_from_user(tmp, buffer, count))
+		return count;
+
+	tmp[count - 1] = '\0';
+	num = sscanf(tmp, "%u %u %u %u %u", &en, &max_mcs, &interval, &up_hyst, &probe_step);
+	if (num < 1)
+		return count;
+
+	if (num >= 1)
+		adapter->p4oc_ra_enable = en ? 1 : 0;
+	if (num >= 2)
+		adapter->p4oc_ra_max_ht_mcs = max_mcs > 31 ? 31 : (u8)max_mcs;
+	if (num >= 3)
+		adapter->p4oc_ra_interval_ms = interval > 1000 ? 1000 : (u16)interval;
+	if (num >= 4)
+		adapter->p4oc_ra_up_hysteresis = up_hyst > 20 ? 20 : (u8)up_hyst;
+	if (num >= 5)
+		adapter->p4oc_ra_probe_step = probe_step > 4 ? 4 : (u8)probe_step;
+
+	if (adapter->p4oc_ra_up_hysteresis == 0)
+		adapter->p4oc_ra_up_hysteresis = 1;
+
+	_set_timer(&adapter_to_dvobj(adapter)->dynamic_chk_timer, rtw_dynamic_chk_timer_interval_ms(adapter));
+
+	return count;
+}
+
 #ifdef CONFIG_AP_MODE
 int proc_get_bmc_tx_rate(struct seq_file *m, void *v)
 {

@@ -6397,6 +6397,8 @@ const struct rtw_proc_hdl adapter_proc_hdls[] = {
 	RTW_PROC_HDL_SSEQ("trx_info", proc_get_trx_info, proc_reset_trx_info),
 	RTW_PROC_HDL_SSEQ("tx_power_offset", proc_get_tx_power_offset, proc_set_tx_power_offset),
 	RTW_PROC_HDL_SSEQ("rate_ctl", proc_get_rate_ctl, proc_set_rate_ctl),
+	RTW_PROC_HDL_SSEQ("p4oc_ra", proc_get_p4oc_ra_cfg, proc_set_p4oc_ra_cfg),
+	RTW_PROC_HDL_SSEQ("p4oc_bw_hint", proc_get_p4oc_bw_hint, NULL),
 	RTW_PROC_HDL_SSEQ("bw_ctl", proc_get_bw_ctl, proc_set_bw_ctl),
 	RTW_PROC_HDL_SSEQ("mac_qinfo", proc_get_mac_qinfo, NULL),
 	RTW_PROC_HDL_SSEQ("macid_info", proc_get_macid_info, NULL),

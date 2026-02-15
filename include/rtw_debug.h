@@ -360,8 +360,11 @@ int proc_get_trx_info(struct seq_file *m, void *v);
 ssize_t proc_set_tx_power_offset(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data);
 int proc_get_tx_power_offset(struct seq_file *m, void *v);
 int proc_get_rate_ctl(struct seq_file *m, void *v);
+int proc_get_p4oc_ra_cfg(struct seq_file *m, void *v);
+int proc_get_p4oc_bw_hint(struct seq_file *m, void *v);
 int proc_get_wifi_spec(struct seq_file *m, void *v);
 ssize_t proc_set_rate_ctl(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data);
+ssize_t proc_set_p4oc_ra_cfg(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data);
 int proc_get_bw_ctl(struct seq_file *m, void *v);
 ssize_t proc_set_bw_ctl(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data);
 #ifdef DBG_RX_COUNTER_DUMP

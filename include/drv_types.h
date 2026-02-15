@@ -894,6 +894,8 @@ struct rtw_traffic_statistics {
 	u64	cur_rx_bytes;
 	u64	last_rx_bytes;
 	u32	cur_rx_tp; /* Rx throughput in Mbps. */
+	u32	tp_calc_interval_ms; /* last traffic throughput calculation interval */
+	systime	tp_calc_time;
 };
 
 #define SEC_CAP_CHK_BMC	BIT0
@@ -1995,6 +1997,11 @@ struct _ADAPTER {
 	u8 fix_rate;
 	u8 fix_bw;
 	u8 data_fb; /* data rate fallback, valid only when fix_rate is not 0xff */
+	u8 p4oc_ra_enable; /* 1: enable link-stability RA mode */
+	u8 p4oc_ra_max_ht_mcs; /* cap HT rates to MCS0..N in stability mode */
+	u16 p4oc_ra_interval_ms; /* dynamic check period in stability mode */
+	u8 p4oc_ra_up_hysteresis; /* cycles required before allowing rate-up */
+	u8 p4oc_ra_probe_step; /* target probe step (debug/control point) */
 	u8 power_offset;
 	u8 driver_tx_bw_mode;
 	u8 rsvd_page_offset;

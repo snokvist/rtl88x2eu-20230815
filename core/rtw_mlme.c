@@ -3897,13 +3897,25 @@ static void collect_traffic_statistics(_adapter *padapter)
 	rtw_mi_traffic_statistics(padapter);
 
 	/* Calculate throughput in last interval */
-	pdvobjpriv->traffic_stat.cur_tx_bytes = pdvobjpriv->traffic_stat.tx_bytes - pdvobjpriv->traffic_stat.last_tx_bytes;
-	pdvobjpriv->traffic_stat.cur_rx_bytes = pdvobjpriv->traffic_stat.rx_bytes - pdvobjpriv->traffic_stat.last_rx_bytes;
-	pdvobjpriv->traffic_stat.last_tx_bytes = pdvobjpriv->traffic_stat.tx_bytes;
-	pdvobjpriv->traffic_stat.last_rx_bytes = pdvobjpriv->traffic_stat.rx_bytes;
+	{
+		u32 interval_ms = 2000;
+		systime now = rtw_get_current_time();
 
-	pdvobjpriv->traffic_stat.cur_tx_tp = (u32)(pdvobjpriv->traffic_stat.cur_tx_bytes * 8 / 2 / 1024 / 1024);/*Mbps*/
-	pdvobjpriv->traffic_stat.cur_rx_tp = (u32)(pdvobjpriv->traffic_stat.cur_rx_bytes * 8 / 2 / 1024 / 1024);/*Mbps*/
+		pdvobjpriv->traffic_stat.cur_tx_bytes = pdvobjpriv->traffic_stat.tx_bytes - pdvobjpriv->traffic_stat.last_tx_bytes;
+		pdvobjpriv->traffic_stat.cur_rx_bytes = pdvobjpriv->traffic_stat.rx_bytes - pdvobjpriv->traffic_stat.last_rx_bytes;
+		pdvobjpriv->traffic_stat.last_tx_bytes = pdvobjpriv->traffic_stat.tx_bytes;
+		pdvobjpriv->traffic_stat.last_rx_bytes = pdvobjpriv->traffic_stat.rx_bytes;
+
+		if (pdvobjpriv->traffic_stat.tp_calc_time)
+			interval_ms = rtw_get_passing_time_ms(pdvobjpriv->traffic_stat.tp_calc_time);
+		if (interval_ms == 0)
+			interval_ms = 1;
+		pdvobjpriv->traffic_stat.tp_calc_time = now;
+		pdvobjpriv->traffic_stat.tp_calc_interval_ms = interval_ms;
+
+		pdvobjpriv->traffic_stat.cur_tx_tp = (u32)((pdvobjpriv->traffic_stat.cur_tx_bytes * 8 * 1000) / interval_ms / 1024 / 1024);/*Mbps*/
+		pdvobjpriv->traffic_stat.cur_rx_tp = (u32)((pdvobjpriv->traffic_stat.cur_rx_bytes * 8 * 1000) / interval_ms / 1024 / 1024);/*Mbps*/
+	}
 
 	#ifdef DBG_TRAFFIC_STATISTIC
 	RTW_INFO("\n========================\n");
@@ -3923,6 +3935,24 @@ static void collect_traffic_statistics(_adapter *padapter)
 #endif /* CONFIG_RTW_NAPI_DYNAMIC */
 #endif
 	
+}
+
+u32 rtw_dynamic_chk_timer_interval_ms(_adapter *adapter)
+{
+	u32 ms = 2000;
+
+	if (!adapter)
+		return ms;
+
+	if (adapter->p4oc_ra_enable) {
+		ms = adapter->p4oc_ra_interval_ms;
+		if (ms < 10)
+			ms = 10;
+		if (ms > 50)
+			ms = 50;
+	}
+
+	return ms;
 }
 
 void rtw_dynamic_check_timer_handlder(void *ctx)
@@ -3954,7 +3984,7 @@ void rtw_dynamic_check_timer_handlder(void *ctx)
 		rtw_dynamic_chk_wk_cmd(adapter);
 
 exit:
-	_set_timer(&pdvobj->dynamic_chk_timer, 2000);
+	_set_timer(&pdvobj->dynamic_chk_timer, rtw_dynamic_chk_timer_interval_ms(adapter));
 }
 
 

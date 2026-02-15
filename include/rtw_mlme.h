@@ -1047,6 +1047,7 @@ extern void rtw_scan_timeout_handler(void *ctx);
 
 extern void rtw_dynamic_check_timer_handlder(void *ctx);
 extern void rtw_iface_dynamic_check_timer_handlder(_adapter *adapter);
+extern u32 rtw_dynamic_chk_timer_interval_ms(_adapter *adapter);
 
 enum {
 	SS_DENY_MP_MODE,

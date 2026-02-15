@@ -29,6 +29,72 @@
 #include "mp_precomp.h"
 #include "phydm_precomp.h"
 
+#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
+static boolean phydm_p4oc_ra_enabled(struct dm_struct *dm)
+{
+	PADAPTER adapter = (PADAPTER)dm->adapter;
+
+	return (adapter && adapter->p4oc_ra_enable) ? true : false;
+}
+
+static u64 phydm_p4oc_ht_cap_mask(struct dm_struct *dm)
+{
+	PADAPTER adapter = (PADAPTER)dm->adapter;
+	u8 max_ht_mcs = 7;
+	u64 mask = 0x0fff; /* keep legacy rates */
+
+	if (!adapter)
+		return 0xffffffffffffffffULL;
+
+	max_ht_mcs = adapter->p4oc_ra_max_ht_mcs;
+	if (max_ht_mcs > 31)
+		max_ht_mcs = 31;
+
+	mask |= (((u64)1 << (max_ht_mcs + 1)) - 1) << 12;
+
+	return mask;
+}
+
+static u64 phydm_p4oc_probe_step_mask(struct dm_struct *dm,
+					      struct cmn_sta_info *sta)
+{
+	PADAPTER adapter = (PADAPTER)dm->adapter;
+	u8 probe_step = 0;
+	u8 max_ht_mcs = 7;
+	u8 curr_rate = 0;
+	u8 curr_mcs = 0;
+	u8 probe_mcs = 0;
+	u64 mask = 0x0fff;
+
+	if (!adapter || !is_sta_active(sta))
+		return 0xffffffffffffffffULL;
+
+	probe_step = adapter->p4oc_ra_probe_step;
+	if (probe_step > 4)
+		probe_step = 4;
+
+	if (probe_step == 0)
+		return 0xffffffffffffffffULL;
+
+	max_ht_mcs = adapter->p4oc_ra_max_ht_mcs;
+	if (max_ht_mcs > 31)
+		max_ht_mcs = 31;
+
+	curr_rate = sta->ra_info.curr_tx_rate & 0x7f;
+	if (curr_rate < ODM_RATEMCS0 || curr_rate > ODM_RATEMCS31)
+		return phydm_p4oc_ht_cap_mask(dm);
+
+	curr_mcs = curr_rate - ODM_RATEMCS0;
+	probe_mcs = curr_mcs + probe_step;
+	if (probe_mcs > max_ht_mcs)
+		probe_mcs = max_ht_mcs;
+
+	mask |= (((u64)1 << (probe_mcs + 1)) - 1) << 12;
+
+	return mask;
+}
+#endif
+
 boolean phydm_is_vht_rate(void *dm_void, u8 rate)
 {
 	return ((rate & 0x7f) >= ODM_RATEVHTSS1MCS0) ? true : false;
@@ -1122,6 +1188,13 @@ u64 phydm_get_bb_mod_ra_mask(void *dm_void, u8 sta_idx)
 			 "Empty ramask! Bypass a/b/g ramask_by_rssi\n");
 	}
 
+#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
+	if (phydm_p4oc_ra_enabled(dm)) {
+		ra_mask_bitmap &= phydm_p4oc_ht_cap_mask(dm);
+		ra_mask_bitmap &= phydm_p4oc_probe_step_mask(dm, sta);
+	}
+#endif
+
 	PHYDM_DBG(dm, DBG_RA, "Mod by RSSI=0x%llx\n", ra_mask_bitmap);
 
 	return ra_mask_bitmap;
@@ -1489,11 +1562,22 @@ void phydm_ra_mask_watchdog(void *dm_void)
 	u64 ra_mask;
 	u8 rssi_lv_new;
 	u8 rssi = 0;
+	u8 old_rssi_lv = 0;
+	u64 old_ra_mask = 0;
+	u64 new_ra_mask = 0;
+	boolean p4oc_mode = false;
 
 	if (!(dm->support_ability & ODM_BB_RA_MASK))
 		return;
 
-	if (!dm->is_linked || (dm->phydm_sys_up_time % 2) == 1)
+	if (!dm->is_linked)
+		return;
+
+#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
+	p4oc_mode = phydm_p4oc_ra_enabled(dm);
+#endif
+
+	if (!p4oc_mode && (dm->phydm_sys_up_time % 2) == 1)
 		return;
 
 	PHYDM_DBG(dm, DBG_RA_MASK, "%s ======>\n", __func__);
@@ -1556,10 +1640,42 @@ void phydm_ra_mask_watchdog(void *dm_void)
 
 		rssi_lv_new = phydm_rssi_lv_dec(dm, (u32)rssi, ra->rssi_level);
 
+#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
+		if (p4oc_mode) {
+			if (ra->curr_retry_ratio >= 45) {
+				if (rssi_lv_new <= (RA_FLOOR_TABLE_SIZE - 3))
+					rssi_lv_new += 2;
+				else
+					rssi_lv_new = RA_FLOOR_TABLE_SIZE - 1;
+			} else if (ra->curr_retry_ratio >= 30) {
+				if (rssi_lv_new < (RA_FLOOR_TABLE_SIZE - 1))
+					rssi_lv_new += 1;
+			}
+		}
+#endif
+
 		if (ra->rssi_level != rssi_lv_new ||
 		    (force_ra_mask_en && dm->number_linked_client < 10)) {
 			PHYDM_DBG(dm, DBG_RA_MASK, "RSSI LV:((%d))->((%d))\n",
 				  ra->rssi_level, rssi_lv_new);
+
+			old_rssi_lv = ra->rssi_level;
+#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
+			if (p4oc_mode && old_rssi_lv != rssi_lv_new) {
+				old_ra_mask = phydm_get_bb_mod_ra_mask(dm, sta_idx);
+				ra->rssi_level = rssi_lv_new;
+				new_ra_mask = phydm_get_bb_mod_ra_mask(dm, sta_idx);
+				ra->rssi_level = old_rssi_lv;
+
+				if ((new_ra_mask & (~old_ra_mask)) != 0) {
+					ra_t->p4oc_up_pending[sta_idx]++;
+					if (ra_t->p4oc_up_pending[sta_idx] < ((PADAPTER)dm->adapter)->p4oc_ra_up_hysteresis)
+						continue;
+				} else {
+					ra_t->p4oc_up_pending[sta_idx] = 0;
+				}
+			}
+#endif
 
 			ra->rssi_level = rssi_lv_new;
 
@@ -1567,6 +1683,10 @@ void phydm_ra_mask_watchdog(void *dm_void)
 
 			if (ra_t->record_ra_info)
 				ra_t->record_ra_info(dm, sta_idx, sta, ra_mask);
+#if (DM_ODM_SUPPORT_TYPE == ODM_CE)
+			if (p4oc_mode)
+				ra_t->p4oc_up_pending[sta_idx] = 0;
+#endif
 
 			#if (RTL8188E_SUPPORT) && (RATE_ADAPTIVE_SUPPORT)
 			if (dm->support_ic_type == ODM_RTL8188E)
