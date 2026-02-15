@@ -3005,6 +3005,7 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	const char *trend = "unknown";
 	bool sgi = _FALSE;
 	u8 bw = CHANNEL_WIDTH_20;
+	const char *curr_rate_name = "UNKNOWN";
 
 	if (interval_ms == 0)
 		interval_ms = 1;
@@ -3016,6 +3017,7 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	psta = rtw_get_stainfo(&adapter->stapriv, get_bssid(&adapter->mlmepriv));
 	if (psta) {
 		curr_rate = rtw_get_current_tx_rate(adapter, psta) & 0x7f;
+		curr_rate_name = HDATA_RATE(curr_rate);
 		sgi = rtw_get_current_tx_sgi(adapter, psta);
 		bw = psta->cmn.ra_info.curr_tx_bw;
 		rssi = psta->cmn.rssi_stat.rssi;
@@ -3067,7 +3069,11 @@ int proc_get_p4oc_bw_hint(struct seq_file *m, void *v)
 	RTW_PRINT_SEL(m, "app_hint_kbps=%u\n", app_hint_kbps);
 	RTW_PRINT_SEL(m, "p4oc_enabled=%u\n", adapter->p4oc_ra_enable);
 	RTW_PRINT_SEL(m, "poll_recommend_ms=%u\n", rtw_dynamic_chk_timer_interval_ms(adapter));
-	RTW_PRINT_SEL(m, "curr_mcs=%d\n", curr_mcs == 0xFF ? -1 : curr_mcs);
+	if (curr_mcs == 0xFF)
+		RTW_PRINT_SEL(m, "curr_mcs=na\n");
+	else
+		RTW_PRINT_SEL(m, "curr_mcs=%u\n", curr_mcs);
+	RTW_PRINT_SEL(m, "curr_rate=%s\n", curr_rate_name);
 	RTW_PRINT_SEL(m, "curr_bw=%s\n", ch_width_str((enum channel_width)bw));
 	RTW_PRINT_SEL(m, "curr_rssi=%d\n", rssi);
 	RTW_PRINT_SEL(m, "retry_ewma=%u\n", retry_ewma);
