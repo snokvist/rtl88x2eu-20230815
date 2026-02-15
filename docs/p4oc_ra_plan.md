@@ -49,3 +49,18 @@ Read back:
 ## Current Scope
 Implemented for CE/Linux path in this repository with minimal invasive changes,
 reusing existing PHYDM RA mask and watchdog mechanisms.
+
+
+## Recommended next steps (status)
+1. Add retry smoothing (EWMA) before applying down-bias thresholds. **Implemented**.
+2. Add temporary rate-up cooldown after high retry bursts. **Implemented**.
+3. Evaluate adding queue/backlog guardrail (e.g., tx-drop growth or queue depth) for emergency downshift. **Planned**.
+4. Add runtime knobs for retry thresholds and cooldown length via proc (`p4oc_ra`). **Planned**.
+
+## Evaluation (v2)
+- Compared to baseline RA, P4OC now has:
+  - bounded rate-up (`probe_step`) + hysteresis,
+  - retry-smoothed down-bias,
+  - cooldown that prevents immediate bounce-back after retry spikes.
+- Expected effect: lower oscillation and fewer aggressive upshifts after transient loss.
+- Remaining gap: no explicit queue-depth/backlog driven emergency downshift yet.

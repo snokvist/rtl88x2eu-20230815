@@ -90,9 +90,10 @@ So: **upward expansion is delayed and bounded**.
 
 ### Downward allowed-mask changes (rate-down side)
 In P4OC mode:
-- Retry ratio from FW RA report (`curr_retry_ratio`) is used as an additional down-bias:
-  - `retry_ratio >= 45`  => push RSSI level down by +2 levels (more conservative mask).
-  - `retry_ratio >= 30`  => push RSSI level down by +1 level.
+- Retry ratio from FW RA report is smoothed by EWMA and used as an additional down-bias:
+  - `retry_ewma >= 45`  => push RSSI level down by +2 levels (more conservative mask).
+  - `retry_ewma >= 30`  => push RSSI level down by +1 level.
+- High retry events also set a short rate-up cooldown (2-3 cycles) to avoid immediate bounce-back.
 - If resulting mask does not expand (same or contracts), update is applied immediately.
 
 So: **downward contraction is immediate and now also retry-sensitive**.
@@ -205,7 +206,8 @@ Then poll `p4oc_bw_hint` at or slightly above `poll_recommend_ms`.
 
 ### Known limitations to verify next
 - `probe_step` is now wired as a mask bound (`current_mcs + probe_step`) for conservative upward probing.
-- Driver-side P4OC trigger logic is now RSSI + retry-ratio biased mask shaping; queue-depth/backlog is still not used.
+- Retry-ratio path now uses EWMA smoothing and temporary up-cooldown after high retry events.
+- Queue-depth/backlog is still not used directly for emergency downshift.
 - Need real-world RF tests to validate oscillation reduction and link survival under fades/interference.
 
 ### Next planned validation
@@ -213,3 +215,22 @@ Then poll `p4oc_bw_hint` at or slightly above `poll_recommend_ms`.
 2. Verify upshift latency increases with `up_hysteresis`.
 3. Verify downshift remains responsive under degraded RSSI.
 4. Compare stability against baseline (`p4oc_ra=0`).
+
+
+## 7) Evaluation (v2 vs baseline RA)
+
+### What changed in v2
+- Added retry-ratio EWMA smoothing before applying P4OC down-bias thresholds.
+- Added temporary rate-up cooldown after high retry events to reduce bounce-back.
+
+### Fit-for-purpose assessment
+- Better fit for link-stability objective than baseline RA and earlier P4OC version:
+  - Upward moves remain bounded (`probe_step`) and hysteresis-gated.
+  - Downward moves now react to **smoothed** retry ratio, reducing spike sensitivity.
+  - Cooldown suppresses immediate re-expansion after short loss bursts.
+- Remaining limitations:
+  - No explicit tx queue/backlog emergency downshift path yet.
+  - Thresholds/cooldown still static (not runtime-tunable yet).
+
+### Recommended next implementation step
+- Add queue/backlog signal (or tx-drop delta) as additional emergency downshift trigger and make thresholds tunable in `p4oc_ra`.
