@@ -3719,52 +3719,255 @@ int proc_get_rssi_b(struct seq_file *m, void *v)
 	return 0;
 }
 
+#define RX_ANT_DBG_PROFILE_AUTO	0
+#define RX_ANT_DBG_PROFILE_LAST	1
+#define RX_ANT_DBG_PROFILE_OFDM	2
+#define RX_ANT_DBG_PROFILE_1SS	3
+#define RX_ANT_DBG_PROFILE_2SS	4
+#define RX_ANT_DBG_PROFILE_3SS	5
+#define RX_ANT_DBG_PROFILE_4SS	6
+
+static const char *rx_ant_profile_name(u8 profile)
+{
+	switch (profile) {
+	case RX_ANT_DBG_PROFILE_LAST: return "last";
+	case RX_ANT_DBG_PROFILE_OFDM: return "ofdm";
+	case RX_ANT_DBG_PROFILE_1SS: return "1ss";
+	case RX_ANT_DBG_PROFILE_2SS: return "2ss";
+	case RX_ANT_DBG_PROFILE_3SS: return "3ss";
+	case RX_ANT_DBG_PROFILE_4SS: return "4ss";
+	case RX_ANT_DBG_PROFILE_AUTO:
+	default:
+		return "auto";
+	}
+}
+
+static u8 rx_ant_profile_from_rate(u8 rate)
+{
+	if (rate <= DESC_RATE54M)
+		return RX_ANT_DBG_PROFILE_OFDM;
+
+	if (rate >= DESC_RATEMCS0 && rate <= DESC_RATEMCS31)
+		return (u8)(RX_ANT_DBG_PROFILE_1SS + ((rate - DESC_RATEMCS0) >> 3));
+
+	if (rate >= DESC_RATEVHTSS1MCS0 && rate <= DESC_RATEVHTSS4MCS9)
+		return (u8)(RX_ANT_DBG_PROFILE_1SS + ((rate - DESC_RATEVHTSS1MCS0) / 10));
+
+	return RX_ANT_DBG_PROFILE_OFDM;
+}
+
 int proc_get_rx_ant_metrics(struct seq_file *m, void *v)
 {
 	struct net_device *dev = m->private;
 	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
 	struct dm_struct *dm = adapter_to_phydm(padapter);
-	struct rx_raw_rssi *raw_rssi = &padapter->recvpriv.raw_rssi_info;
+	struct recv_priv *recvpriv = &padapter->recvpriv;
+	struct rx_raw_rssi *raw_rssi = &recvpriv->raw_rssi_info;
+	struct phydm_phystatus_avg *avg = &dm->phy_dbg_info.phystatus_statistic_avg;
 	struct hal_spec_t *hal_spec = GET_HAL_SPEC(padapter);
 	HAL_DATA_TYPE *hal_data = GET_HAL_DATA(padapter);
 	u8 rx_cnt = rf_type_to_rf_rx_cnt(hal_data->rf_type);
 	u8 rx_path_bmp = GET_HAL_RX_PATH_BMP(padapter);
-	u8 rssi[4] = {dm->rssi_a, dm->rssi_b, dm->rssi_c, dm->rssi_d};
-	u8 path_cnt = 0;
+	u8 cfg = recvpriv->rx_ant_dbg_cfg;
+	u8 profile = cfg & 0x7;
+	u8 use_target_rate = (cfg >> 3) & 0x1;
+	u8 target_rate = recvpriv->rx_ant_dbg_rate;
+	u8 effective_rate = use_target_rate ? target_rate : dm->rx_rate;
 	u8 rf_path;
-	u8 is_cck_rate = (raw_rssi->data_rate <= DESC_RATE11M) ? _TRUE : _FALSE;
+	u8 path_cnt = 0;
+	u8 rssi_dm[4] = {dm->rssi_a, dm->rssi_b, dm->rssi_c, dm->rssi_d};
+	u8 rssi_val[4] = {0};
+	u8 snr_val[4] = {0};
+	u8 lock_val[4] = {0};
+	s8 pwr_val[4] = {-1, -1, -1, -1};
+	const u8 *rssi_avg = NULL;
+	const u8 *snr_avg = NULL;
+	const u8 *evm_avg = NULL;
+	const char *metric_source = "last";
 
-	RTW_PRINT_SEL(m, "rx_rate(raw): %s\n", HDATA_RATE(raw_rssi->data_rate));
-	RTW_PRINT_SEL(m, "rx_rate(odm): %s\n", HDATA_RATE(dm->rx_rate));
-	RTW_PRINT_SEL(m, "rx_path_bmp: 0x%02x, rx_cnt: %u\n", rx_path_bmp, rx_cnt);
-	RTW_PRINT_SEL(m, "pwdb_all: %u(%%), recv_signal_power: %d(dBm), cck_rate: %u\n",
-		      raw_rssi->pwdball, raw_rssi->pwr_all, is_cck_rate);
+	if (profile == RX_ANT_DBG_PROFILE_AUTO)
+		profile = rx_ant_profile_from_rate(effective_rate);
+
+	switch (profile) {
+	case RX_ANT_DBG_PROFILE_LAST:
+		for (rf_path = 0; rf_path < 4; rf_path++) {
+			rssi_val[rf_path] = rssi_dm[rf_path];
+			snr_val[rf_path] = raw_rssi->ofdm_snr[rf_path];
+			lock_val[rf_path] = raw_rssi->mimo_signal_quality[rf_path];
+			pwr_val[rf_path] = raw_rssi->ofdm_pwr[rf_path];
+		}
+		metric_source = "last";
+		break;
+	case RX_ANT_DBG_PROFILE_1SS:
+		rssi_avg = avg->rssi_1ss_avg;
+		snr_avg = avg->snr_1ss_avg;
+		lock_val[0] = avg->evm_1ss_avg;
+		metric_source = "avg_1ss";
+		break;
+	case RX_ANT_DBG_PROFILE_2SS:
+	#if (defined(PHYDM_COMPILE_ABOVE_2SS))
+		rssi_avg = avg->rssi_2ss_avg;
+		snr_avg = avg->snr_2ss_avg;
+		evm_avg = avg->evm_2ss_avg;
+		metric_source = "avg_2ss";
+	#else
+		profile = RX_ANT_DBG_PROFILE_1SS;
+		rssi_avg = avg->rssi_1ss_avg;
+		snr_avg = avg->snr_1ss_avg;
+		lock_val[0] = avg->evm_1ss_avg;
+		metric_source = "avg_1ss";
+	#endif
+		break;
+	case RX_ANT_DBG_PROFILE_3SS:
+	#if (defined(PHYDM_COMPILE_ABOVE_3SS))
+		rssi_avg = avg->rssi_3ss_avg;
+		snr_avg = avg->snr_3ss_avg;
+		evm_avg = avg->evm_3ss_avg;
+		metric_source = "avg_3ss";
+	#else
+		profile = RX_ANT_DBG_PROFILE_2SS;
+	#if (defined(PHYDM_COMPILE_ABOVE_2SS))
+		rssi_avg = avg->rssi_2ss_avg;
+		snr_avg = avg->snr_2ss_avg;
+		evm_avg = avg->evm_2ss_avg;
+		metric_source = "avg_2ss";
+	#else
+		rssi_avg = avg->rssi_1ss_avg;
+		snr_avg = avg->snr_1ss_avg;
+		lock_val[0] = avg->evm_1ss_avg;
+		metric_source = "avg_1ss";
+	#endif
+	#endif
+		break;
+	case RX_ANT_DBG_PROFILE_4SS:
+	#if (defined(PHYDM_COMPILE_ABOVE_4SS))
+		rssi_avg = avg->rssi_4ss_avg;
+		snr_avg = avg->snr_4ss_avg;
+		evm_avg = avg->evm_4ss_avg;
+		metric_source = "avg_4ss";
+	#else
+		profile = RX_ANT_DBG_PROFILE_3SS;
+	#if (defined(PHYDM_COMPILE_ABOVE_3SS))
+		rssi_avg = avg->rssi_3ss_avg;
+		snr_avg = avg->snr_3ss_avg;
+		evm_avg = avg->evm_3ss_avg;
+		metric_source = "avg_3ss";
+	#elif (defined(PHYDM_COMPILE_ABOVE_2SS))
+		rssi_avg = avg->rssi_2ss_avg;
+		snr_avg = avg->snr_2ss_avg;
+		evm_avg = avg->evm_2ss_avg;
+		metric_source = "avg_2ss";
+	#else
+		rssi_avg = avg->rssi_1ss_avg;
+		snr_avg = avg->snr_1ss_avg;
+		lock_val[0] = avg->evm_1ss_avg;
+		metric_source = "avg_1ss";
+	#endif
+	#endif
+		break;
+	case RX_ANT_DBG_PROFILE_OFDM:
+	default:
+		rssi_avg = avg->rssi_ofdm_avg;
+		snr_avg = avg->snr_ofdm_avg;
+		lock_val[0] = avg->evm_ofdm_avg;
+		metric_source = "avg_ofdm";
+		break;
+	}
+
+	if (rssi_avg || snr_avg || evm_avg) {
+		for (rf_path = 0; rf_path < 4; rf_path++) {
+			if (rssi_avg)
+				rssi_val[rf_path] = rssi_avg[rf_path];
+			if (snr_avg)
+				snr_val[rf_path] = snr_avg[rf_path];
+		}
+		if (evm_avg) {
+			for (rf_path = 0; rf_path < 4; rf_path++)
+				lock_val[rf_path] = evm_avg[rf_path];
+		}
+	}
+
+	RTW_PRINT_SEL(m, "profile=%s,use_target_rate=%u,target_rate=%u,effective_rate=%u,odm_rate=%u,rx_path_bmp=0x%02x,rx_cnt=%u,store_raw=%u,metric_source=%s\n",
+		      rx_ant_profile_name(profile), use_target_rate, target_rate, effective_rate,
+		      dm->rx_rate, rx_path_bmp, rx_cnt, recvpriv->store_law_data_flag, metric_source);
 
 	for (rf_path = 0; rf_path < hal_spec->rf_reg_path_num && rf_path < 4; rf_path++) {
 		if (!(rx_path_bmp & BIT(rf_path)))
 			continue;
-
 		RTW_PRINT_SEL(m,
-			      "path_%c: rssi=%u(%%), signal_strength=%u(%%), lock_quality=%u(%%), "
-			      "ofdm_pwr=%d(dBm), ofdm_snr=%u(dB), ofdm_snr_latest=%d(dB)\n",
-			      'A' + rf_path,
-			      rssi[rf_path],
-			      raw_rssi->mimo_signal_strength[rf_path],
-			      raw_rssi->mimo_signal_quality[rf_path],
-			      raw_rssi->ofdm_pwr[rf_path],
-			      raw_rssi->ofdm_snr[rf_path],
-			      padapter->recvpriv.ofdm_snr_latest[rf_path]);
+			      "path=%c,rssi=%u,lock_quality=%u,snr=%u,rx_pwr_dbm=%d,snr_latest=%d\n",
+			      'A' + rf_path, rssi_val[rf_path], lock_val[rf_path], snr_val[rf_path],
+			      pwr_val[rf_path], recvpriv->ofdm_snr_latest[rf_path]);
 		path_cnt++;
 	}
 
 	if (path_cnt == 0)
-		RTW_PRINT_SEL(m, "No active RX path\n");
-
-	RTW_PRINT_SEL(m,
-		      "reference: lock_quality uses per-path signal_quality (EVM-derived % on OFDM), "
-		      "rssi_* uses ODM per-path RSSI%%\n");
+		RTW_PRINT_SEL(m, "path=none\n");
 
 	return 0;
+}
+
+ssize_t proc_set_rx_ant_metrics(struct file *file, const char __user *buffer, size_t count, loff_t *pos, void *data)
+{
+	struct net_device *dev = data;
+	_adapter *padapter = (_adapter *)rtw_netdev_priv(dev);
+	struct recv_priv *recvpriv = &padapter->recvpriv;
+	char tmp[96] = {0};
+	char *tok, *ctx = tmp;
+
+	if (count < 1)
+		return -EFAULT;
+
+	if (count >= sizeof(tmp))
+		count = sizeof(tmp) - 1;
+
+	if (!buffer || copy_from_user(tmp, buffer, count))
+		return -EFAULT;
+
+	tmp[count] = '\0';
+
+	while ((tok = strsep(&ctx, " ,\t\n")) != NULL) {
+		int val;
+
+		if (!*tok)
+			continue;
+
+		if (sscanf(tok, "rate=%i", &val) == 1 || sscanf(tok, "%i", &val) == 1) {
+			if (val >= 0 && val <= 0xFF) {
+				recvpriv->rx_ant_dbg_rate = (u8)val;
+				recvpriv->rx_ant_dbg_cfg |= BIT(3);
+			}
+			continue;
+		}
+
+		if (!strcmp(tok, "rate=auto") || !strcmp(tok, "rate_off")) {
+			recvpriv->rx_ant_dbg_cfg &= ~BIT(3);
+			continue;
+		}
+
+		if (sscanf(tok, "store=%i", &val) == 1) {
+			recvpriv->store_law_data_flag = val ? _TRUE : _FALSE;
+			continue;
+		}
+
+		if (!strcmp(tok, "profile=auto") || !strcmp(tok, "auto"))
+			recvpriv->rx_ant_dbg_cfg = (recvpriv->rx_ant_dbg_cfg & BIT(3)) | RX_ANT_DBG_PROFILE_AUTO;
+		else if (!strcmp(tok, "profile=last") || !strcmp(tok, "last"))
+			recvpriv->rx_ant_dbg_cfg = (recvpriv->rx_ant_dbg_cfg & BIT(3)) | RX_ANT_DBG_PROFILE_LAST;
+		else if (!strcmp(tok, "profile=ofdm") || !strcmp(tok, "ofdm"))
+			recvpriv->rx_ant_dbg_cfg = (recvpriv->rx_ant_dbg_cfg & BIT(3)) | RX_ANT_DBG_PROFILE_OFDM;
+		else if (!strcmp(tok, "profile=1ss") || !strcmp(tok, "1ss"))
+			recvpriv->rx_ant_dbg_cfg = (recvpriv->rx_ant_dbg_cfg & BIT(3)) | RX_ANT_DBG_PROFILE_1SS;
+		else if (!strcmp(tok, "profile=2ss") || !strcmp(tok, "2ss"))
+			recvpriv->rx_ant_dbg_cfg = (recvpriv->rx_ant_dbg_cfg & BIT(3)) | RX_ANT_DBG_PROFILE_2SS;
+		else if (!strcmp(tok, "profile=3ss") || !strcmp(tok, "3ss"))
+			recvpriv->rx_ant_dbg_cfg = (recvpriv->rx_ant_dbg_cfg & BIT(3)) | RX_ANT_DBG_PROFILE_3SS;
+		else if (!strcmp(tok, "profile=4ss") || !strcmp(tok, "4ss"))
+			recvpriv->rx_ant_dbg_cfg = (recvpriv->rx_ant_dbg_cfg & BIT(3)) | RX_ANT_DBG_PROFILE_4SS;
+	}
+	}
+
+	return count;
 }
 
 int proc_get_snr_a(struct seq_file *m, void *v)

@@ -543,6 +543,8 @@ struct recv_priv {
 	u16 sink_udpport, pre_rtp_rxseq, cur_rtp_rxseq;
 
 	BOOLEAN store_law_data_flag;
+	u8 rx_ant_dbg_cfg; /* b0~b2: profile(0:auto,1:last,2:ofdm,3:1ss,4:2ss,5:3ss,6:4ss), b3:use_target_rate */
+	u8 rx_ant_dbg_rate;
 };
 
 #ifdef CONFIG_SDIO_RECVBUF_AGGREGATION
