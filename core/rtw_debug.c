@@ -3965,7 +3965,6 @@ ssize_t proc_set_rx_ant_metrics(struct file *file, const char __user *buffer, si
 		else if (!strcmp(tok, "profile=4ss") || !strcmp(tok, "4ss"))
 			recvpriv->rx_ant_dbg_cfg = (recvpriv->rx_ant_dbg_cfg & BIT(3)) | RX_ANT_DBG_PROFILE_4SS;
 	}
-	}
 
 	return count;
 }
