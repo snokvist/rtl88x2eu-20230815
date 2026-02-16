@@ -106,6 +106,7 @@ sint _rtw_init_recv_priv(struct recv_priv *precvpriv, _adapter *padapter)
 	_rtw_memset(precvpriv->ofdm_snr_latest, 0, sizeof(precvpriv->ofdm_snr_latest));
 	precvpriv->rx_ant_dbg_cfg = 0; /* auto profile */
 	precvpriv->rx_ant_dbg_rate = 0xFF;
+	precvpriv->rx_ant_dbg_sample_ms = 1000;
 
 	rtw_os_recv_resource_init(precvpriv, padapter);
 

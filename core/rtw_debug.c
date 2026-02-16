@@ -3756,11 +3756,13 @@ static u8 rx_ant_profile_from_rate(u8 rate)
 	return RX_ANT_DBG_PROFILE_OFDM;
 }
 
-static void rx_ant_emit_profile_table(struct seq_file *m, struct dm_struct *dm, u8 profile,
-	const u8 *rssi_val, const u8 *lock_val, const u8 *snr_val)
+static void rx_ant_emit_profile_table(struct seq_file *m, struct dm_struct *dm,
+	u8 profile, const u8 *rssi_val, const u8 *lock_val, const u8 *snr_val,
+	u8 sample_ms, const u16 *legacy_start, const u16 *ht_start, const u16 *vht_start)
 {
 	struct odm_phy_dbg_info *dbg = &dm->phy_dbg_info;
 	u8 i;
+	u16 pkt_cnt;
 
 	if (profile >= RX_ANT_DBG_PROFILE_1SS && profile <= RX_ANT_DBG_PROFILE_4SS) {
 		u8 ss = profile - RX_ANT_DBG_PROFILE_1SS + 1;
@@ -3770,41 +3772,49 @@ static void rx_ant_emit_profile_table(struct seq_file *m, struct dm_struct *dm, 
 		for (i = 0; i < 8; i++) {
 			u8 mcs = hbase + i;
 			u8 rate_idx = DESC_RATEMCS0 + mcs;
-			u16 pkt_cnt = dbg->num_qry_ht_pkt[mcs];
+			u16 curr = dbg->num_qry_ht_pkt[mcs];
+
+			pkt_cnt = sample_ms ? (curr >= ht_start[mcs] ? (curr - ht_start[mcs]) : curr) : curr;
 
 			RTW_PRINT_SEL(m,
-				"row=ht_mcs%u,ss=%u,rate_idx=%u,pkt_cnt=%u,rssi_a=%u,rssi_b=%u,rssi_c=%u,rssi_d=%u,lock_a=%u,lock_b=%u,lock_c=%u,lock_d=%u,snr_a=%u,snr_b=%u,snr_c=%u,snr_d=%u\n",
+				"row=ht_mcs%u,ss=%u,rate_idx=%u,pkt_cnt=%u,rssi_a=%u,rssi_b=%u,lock_a=%u,lock_b=%u,snr_a=%u,snr_b=%u\n",
 				mcs, ss, rate_idx, pkt_cnt,
-				rssi_val[0], rssi_val[1], rssi_val[2], rssi_val[3],
-				lock_val[0], lock_val[1], lock_val[2], lock_val[3],
-				snr_val[0], snr_val[1], snr_val[2], snr_val[3]);
+				rssi_val[0], rssi_val[1],
+				lock_val[0], lock_val[1],
+				snr_val[0], snr_val[1]);
 		}
 
 	#if ODM_IC_11AC_SERIES_SUPPORT || defined(PHYDM_IC_JGR3_SERIES_SUPPORT)
 		for (i = 0; i < 10; i++) {
 			u8 mcs = i;
-			u8 rate_idx = DESC_RATEVHTSS1MCS0 + vbase + i;
-			u16 pkt_cnt = dbg->num_qry_vht_pkt[vbase + i];
+			u8 vidx = vbase + i;
+			u8 rate_idx = DESC_RATEVHTSS1MCS0 + vidx;
+			u16 curr = dbg->num_qry_vht_pkt[vidx];
+
+			pkt_cnt = sample_ms ? (curr >= vht_start[vidx] ? (curr - vht_start[vidx]) : curr) : curr;
 
 			RTW_PRINT_SEL(m,
-				"row=vht%uss_mcs%u,ss=%u,rate_idx=%u,pkt_cnt=%u,rssi_a=%u,rssi_b=%u,rssi_c=%u,rssi_d=%u,lock_a=%u,lock_b=%u,lock_c=%u,lock_d=%u,snr_a=%u,snr_b=%u,snr_c=%u,snr_d=%u\n",
+				"row=vht%uss_mcs%u,ss=%u,rate_idx=%u,pkt_cnt=%u,rssi_a=%u,rssi_b=%u,lock_a=%u,lock_b=%u,snr_a=%u,snr_b=%u\n",
 				ss, mcs, ss, rate_idx, pkt_cnt,
-				rssi_val[0], rssi_val[1], rssi_val[2], rssi_val[3],
-				lock_val[0], lock_val[1], lock_val[2], lock_val[3],
-				snr_val[0], snr_val[1], snr_val[2], snr_val[3]);
+				rssi_val[0], rssi_val[1],
+				lock_val[0], lock_val[1],
+				snr_val[0], snr_val[1]);
 		}
 	#endif
 	} else if (profile == RX_ANT_DBG_PROFILE_OFDM) {
 		for (i = DESC_RATE6M; i <= DESC_RATE54M; i++) {
+			u8 lidx = i - DESC_RATE1M;
 			u8 rate_idx = i;
-			u16 pkt_cnt = dbg->num_qry_legacy_pkt[i - DESC_RATE1M];
+			u16 curr = dbg->num_qry_legacy_pkt[lidx];
+
+			pkt_cnt = sample_ms ? (curr >= legacy_start[lidx] ? (curr - legacy_start[lidx]) : curr) : curr;
 
 			RTW_PRINT_SEL(m,
-				"row=ofdm_%s,rate_idx=%u,pkt_cnt=%u,rssi_a=%u,rssi_b=%u,rssi_c=%u,rssi_d=%u,lock_a=%u,lock_b=%u,lock_c=%u,lock_d=%u,snr_a=%u,snr_b=%u,snr_c=%u,snr_d=%u\n",
+				"row=ofdm_%s,rate_idx=%u,pkt_cnt=%u,rssi_a=%u,rssi_b=%u,lock_a=%u,lock_b=%u,snr_a=%u,snr_b=%u\n",
 				HDATA_RATE(rate_idx), rate_idx, pkt_cnt,
-				rssi_val[0], rssi_val[1], rssi_val[2], rssi_val[3],
-				lock_val[0], lock_val[1], lock_val[2], lock_val[3],
-				snr_val[0], snr_val[1], snr_val[2], snr_val[3]);
+				rssi_val[0], rssi_val[1],
+				lock_val[0], lock_val[1],
+				snr_val[0], snr_val[1]);
 		}
 	}
 }
@@ -3826,13 +3836,20 @@ int proc_get_rx_ant_metrics(struct seq_file *m, void *v)
 	u8 use_target_rate = (cfg >> 3) & 0x1;
 	u8 target_rate = recvpriv->rx_ant_dbg_rate;
 	u8 effective_rate = use_target_rate ? target_rate : dm->rx_rate;
+	u16 sample_ms = recvpriv->rx_ant_dbg_sample_ms;
+	u16 legacy_start[LEGACY_RATE_NUM] = {0};
+	u16 ht_start[HT_RATE_NUM] = {0};
+#if ODM_IC_11AC_SERIES_SUPPORT || defined(PHYDM_IC_JGR3_SERIES_SUPPORT)
+	u16 vht_start[VHT_RATE_NUM] = {0};
+#else
+	u16 vht_start[1] = {0};
+#endif
 	u8 rf_path;
 	u8 path_cnt = 0;
 	u8 rssi_dm[4] = {dm->rssi_a, dm->rssi_b, dm->rssi_c, dm->rssi_d};
 	u8 rssi_val[4] = {0};
 	u8 snr_val[4] = {0};
 	u8 lock_val[4] = {0};
-	s8 pwr_val[4] = {-1, -1, -1, -1};
 	const u8 *rssi_avg = NULL;
 	const u8 *snr_avg = NULL;
 	const u8 *evm_avg = NULL;
@@ -3841,13 +3858,21 @@ int proc_get_rx_ant_metrics(struct seq_file *m, void *v)
 	if (profile == RX_ANT_DBG_PROFILE_AUTO)
 		profile = rx_ant_profile_from_rate(effective_rate);
 
+	if (sample_ms) {
+		_rtw_memcpy(legacy_start, dm->phy_dbg_info.num_qry_legacy_pkt, sizeof(legacy_start));
+		_rtw_memcpy(ht_start, dm->phy_dbg_info.num_qry_ht_pkt, sizeof(ht_start));
+#if ODM_IC_11AC_SERIES_SUPPORT || defined(PHYDM_IC_JGR3_SERIES_SUPPORT)
+		_rtw_memcpy(vht_start, dm->phy_dbg_info.num_qry_vht_pkt, sizeof(vht_start));
+#endif
+		rtw_msleep_os(sample_ms);
+	}
+
 	switch (profile) {
 	case RX_ANT_DBG_PROFILE_LAST:
 		for (rf_path = 0; rf_path < 4; rf_path++) {
 			rssi_val[rf_path] = rssi_dm[rf_path];
 			snr_val[rf_path] = raw_rssi->ofdm_snr[rf_path];
 			lock_val[rf_path] = raw_rssi->mimo_signal_quality[rf_path];
-			pwr_val[rf_path] = raw_rssi->ofdm_pwr[rf_path];
 		}
 		metric_source = "last";
 		break;
@@ -3940,19 +3965,19 @@ int proc_get_rx_ant_metrics(struct seq_file *m, void *v)
 		}
 	}
 
-	RTW_PRINT_SEL(m, "profile=%s,use_target_rate=%u,target_rate=%u,effective_rate=%u,odm_rate=%u,rx_path_bmp=0x%02x,rx_cnt=%u,store_raw=%u,metric_source=%s\n",
+	RTW_PRINT_SEL(m, "profile=%s,use_target_rate=%u,target_rate=%u,effective_rate=%u,odm_rate=%u,rx_path_bmp=0x%02x,rx_cnt=%u,store_raw=%u,metric_source=%s,sample_ms=%u\n",
 		      rx_ant_profile_name(profile), use_target_rate, target_rate, effective_rate,
-		      dm->rx_rate, rx_path_bmp, rx_cnt, recvpriv->store_law_data_flag, metric_source);
+		      dm->rx_rate, rx_path_bmp, rx_cnt, recvpriv->store_law_data_flag, metric_source, sample_ms);
 
-	rx_ant_emit_profile_table(m, dm, profile, rssi_val, lock_val, snr_val);
+	rx_ant_emit_profile_table(m, dm, profile, rssi_val, lock_val, snr_val, sample_ms, legacy_start, ht_start, vht_start);
 
-	for (rf_path = 0; rf_path < hal_spec->rf_reg_path_num && rf_path < 4; rf_path++) {
+	for (rf_path = 0; rf_path < hal_spec->rf_reg_path_num && rf_path < 2; rf_path++) {
 		if (!(rx_path_bmp & BIT(rf_path)))
 			continue;
 		RTW_PRINT_SEL(m,
-			      "path=%c,rssi=%u,lock_quality=%u,snr=%u,rx_pwr_dbm=%d,snr_latest=%d\n",
+			      "path=%c,rssi=%u,lock_quality=%u,snr=%u,snr_latest=%d\n",
 			      'A' + rf_path, rssi_val[rf_path], lock_val[rf_path], snr_val[rf_path],
-			      pwr_val[rf_path], recvpriv->ofdm_snr_latest[rf_path]);
+			      recvpriv->ofdm_snr_latest[rf_path]);
 		path_cnt++;
 	}
 
@@ -4002,6 +4027,15 @@ ssize_t proc_set_rx_ant_metrics(struct file *file, const char __user *buffer, si
 
 		if (sscanf(tok, "store=%i", &val) == 1) {
 			recvpriv->store_law_data_flag = val ? _TRUE : _FALSE;
+			continue;
+		}
+
+		if (sscanf(tok, "sample_ms=%i", &val) == 1) {
+			if (val < 0)
+				val = 0;
+			if (val > 10000)
+				val = 10000;
+			recvpriv->rx_ant_dbg_sample_ms = (u16)val;
 			continue;
 		}
 

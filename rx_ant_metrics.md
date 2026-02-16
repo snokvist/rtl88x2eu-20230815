@@ -18,22 +18,23 @@ The proc node supports both:
 1. Header/context line:
 
 ```
-profile=<name>,use_target_rate=<0|1>,target_rate=<0-255>,effective_rate=<0-255>,odm_rate=<0-255>,rx_path_bmp=0xNN,rx_cnt=<n>,store_raw=<0|1>,metric_source=<name>
+profile=<name>,use_target_rate=<0|1>,target_rate=<0-255>,effective_rate=<0-255>,odm_rate=<0-255>,rx_path_bmp=0xNN,rx_cnt=<n>,store_raw=<0|1>,metric_source=<name>,sample_ms=<0-10000>
 ```
 
 2. Profile table rows (when profile is `ofdm`/`1ss`/`2ss`/`3ss`/`4ss`):
 
 ```
-row=<label>,rate_idx=<n>,pkt_cnt=<n>,rssi_a=<n>,rssi_b=<n>,rssi_c=<n>,rssi_d=<n>,lock_a=<n>,lock_b=<n>,lock_c=<n>,lock_d=<n>,snr_a=<n>,snr_b=<n>,snr_c=<n>,snr_d=<n>
+row=<label>,rate_idx=<n>,pkt_cnt=<n>,rssi_a=<n>,rssi_b=<n>,lock_a=<n>,lock_b=<n>,snr_a=<n>,snr_b=<n>
 ```
 
 - For `1ss`~`4ss`, rows include HT (`ht_mcs...`) and VHT (`vht...`) entries for that spatial-stream family.
+- Output intentionally exposes path A/B columns only (clean for 2-path devices).
 - For `ofdm`, rows include OFDM legacy rates (`ofdm_OFDM_6M` ... `ofdm_OFDM_54M`).
 
 3. One line per active RX path:
 
 ```
-path=<A|B|C|D>,rssi=<0-100>,lock_quality=<0-100>,snr=<0-100>,rx_pwr_dbm=<signed>,snr_latest=<signed>
+path=<A|B>,rssi=<0-100>,lock_quality=<0-100>,snr=<0-100>,snr_latest=<signed>
 ```
 
 If no active RX path exists, output contains:
@@ -77,11 +78,20 @@ Short aliases are also accepted (`auto`, `last`, `ofdm`, `1ss`, `2ss`, `3ss`, `4
 
 `store=1` is useful with `profile=last` (last-packet raw metrics).
 
-### 4) Combined examples
+### 4) Sampling window for pkt counters
+
+- `echo sample_ms=1000 > rx_ant_metrics`
+- `echo sample_ms=3000 > rx_ant_metrics`
+- `echo sample_ms=0 > rx_ant_metrics` (disable time-window delta; use immediate counters)
+
+`sample_ms` controls how long the proc reader waits before taking the second counter snapshot for `pkt_cnt`.
+Larger values generally produce larger, more stable packet counts.
+
+### 5) Combined examples
 
 - `echo "profile=1ss rate=0x14" > rx_ant_metrics`
 - `echo "profile=ofdm rate=auto" > rx_ant_metrics`
-- `echo "profile=last store=1" > rx_ant_metrics`
+- `echo "profile=last store=1 sample_ms=3000" > rx_ant_metrics`
 
 ---
 
