@@ -21,7 +21,16 @@ The proc node supports both:
 profile=<name>,use_target_rate=<0|1>,target_rate=<0-255>,effective_rate=<0-255>,odm_rate=<0-255>,rx_path_bmp=0xNN,rx_cnt=<n>,store_raw=<0|1>,metric_source=<name>
 ```
 
-2. One line per active RX path:
+2. Profile table rows (when profile is `ofdm`/`1ss`/`2ss`/`3ss`/`4ss`):
+
+```
+row=<label>,rate_idx=<n>,pkt_cnt=<n>,rssi_a=<n>,rssi_b=<n>,rssi_c=<n>,rssi_d=<n>,lock_a=<n>,lock_b=<n>,lock_c=<n>,lock_d=<n>,snr_a=<n>,snr_b=<n>,snr_c=<n>,snr_d=<n>
+```
+
+- For `1ss`~`4ss`, rows include HT (`ht_mcs...`) and VHT (`vht...`) entries for that spatial-stream family.
+- For `ofdm`, rows include OFDM legacy rates (`ofdm_OFDM_6M` ... `ofdm_OFDM_54M`).
+
+3. One line per active RX path:
 
 ```
 path=<A|B|C|D>,rssi=<0-100>,lock_quality=<0-100>,snr=<0-100>,rx_pwr_dbm=<signed>,snr_latest=<signed>
@@ -148,6 +157,8 @@ Examples:
 ---
 
 ## MCS to profile guidance
+
+When you select `profile=1ss`, you now get a full table for HT MCS0-7 and VHT1SS MCS0-9 (same for other SS profiles).
 
 If you want a profile explicitly matching your MCS class:
 

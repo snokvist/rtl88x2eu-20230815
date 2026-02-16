@@ -3756,6 +3756,59 @@ static u8 rx_ant_profile_from_rate(u8 rate)
 	return RX_ANT_DBG_PROFILE_OFDM;
 }
 
+static void rx_ant_emit_profile_table(struct seq_file *m, struct dm_struct *dm, u8 profile,
+	const u8 *rssi_val, const u8 *lock_val, const u8 *snr_val)
+{
+	struct odm_phy_dbg_info *dbg = &dm->phy_dbg_info;
+	u8 i;
+
+	if (profile >= RX_ANT_DBG_PROFILE_1SS && profile <= RX_ANT_DBG_PROFILE_4SS) {
+		u8 ss = profile - RX_ANT_DBG_PROFILE_1SS + 1;
+		u8 hbase = (ss - 1) * 8;
+		u8 vbase = (ss - 1) * 10;
+
+		for (i = 0; i < 8; i++) {
+			u8 mcs = hbase + i;
+			u8 rate_idx = DESC_RATEMCS0 + mcs;
+			u16 pkt_cnt = dbg->num_qry_ht_pkt[mcs];
+
+			RTW_PRINT_SEL(m,
+				"row=ht_mcs%u,ss=%u,rate_idx=%u,pkt_cnt=%u,rssi_a=%u,rssi_b=%u,rssi_c=%u,rssi_d=%u,lock_a=%u,lock_b=%u,lock_c=%u,lock_d=%u,snr_a=%u,snr_b=%u,snr_c=%u,snr_d=%u\n",
+				mcs, ss, rate_idx, pkt_cnt,
+				rssi_val[0], rssi_val[1], rssi_val[2], rssi_val[3],
+				lock_val[0], lock_val[1], lock_val[2], lock_val[3],
+				snr_val[0], snr_val[1], snr_val[2], snr_val[3]);
+		}
+
+	#if ODM_IC_11AC_SERIES_SUPPORT || defined(PHYDM_IC_JGR3_SERIES_SUPPORT)
+		for (i = 0; i < 10; i++) {
+			u8 mcs = i;
+			u8 rate_idx = DESC_RATEVHTSS1MCS0 + vbase + i;
+			u16 pkt_cnt = dbg->num_qry_vht_pkt[vbase + i];
+
+			RTW_PRINT_SEL(m,
+				"row=vht%uss_mcs%u,ss=%u,rate_idx=%u,pkt_cnt=%u,rssi_a=%u,rssi_b=%u,rssi_c=%u,rssi_d=%u,lock_a=%u,lock_b=%u,lock_c=%u,lock_d=%u,snr_a=%u,snr_b=%u,snr_c=%u,snr_d=%u\n",
+				ss, mcs, ss, rate_idx, pkt_cnt,
+				rssi_val[0], rssi_val[1], rssi_val[2], rssi_val[3],
+				lock_val[0], lock_val[1], lock_val[2], lock_val[3],
+				snr_val[0], snr_val[1], snr_val[2], snr_val[3]);
+		}
+	#endif
+	} else if (profile == RX_ANT_DBG_PROFILE_OFDM) {
+		for (i = DESC_RATE6M; i <= DESC_RATE54M; i++) {
+			u8 rate_idx = i;
+			u16 pkt_cnt = dbg->num_qry_legacy_pkt[i - DESC_RATE1M];
+
+			RTW_PRINT_SEL(m,
+				"row=ofdm_%s,rate_idx=%u,pkt_cnt=%u,rssi_a=%u,rssi_b=%u,rssi_c=%u,rssi_d=%u,lock_a=%u,lock_b=%u,lock_c=%u,lock_d=%u,snr_a=%u,snr_b=%u,snr_c=%u,snr_d=%u\n",
+				HDATA_RATE(rate_idx), rate_idx, pkt_cnt,
+				rssi_val[0], rssi_val[1], rssi_val[2], rssi_val[3],
+				lock_val[0], lock_val[1], lock_val[2], lock_val[3],
+				snr_val[0], snr_val[1], snr_val[2], snr_val[3]);
+		}
+	}
+}
+
 int proc_get_rx_ant_metrics(struct seq_file *m, void *v)
 {
 	struct net_device *dev = m->private;
@@ -3890,6 +3943,8 @@ int proc_get_rx_ant_metrics(struct seq_file *m, void *v)
 	RTW_PRINT_SEL(m, "profile=%s,use_target_rate=%u,target_rate=%u,effective_rate=%u,odm_rate=%u,rx_path_bmp=0x%02x,rx_cnt=%u,store_raw=%u,metric_source=%s\n",
 		      rx_ant_profile_name(profile), use_target_rate, target_rate, effective_rate,
 		      dm->rx_rate, rx_path_bmp, rx_cnt, recvpriv->store_law_data_flag, metric_source);
+
+	rx_ant_emit_profile_table(m, dm, profile, rssi_val, lock_val, snr_val);
 
 	for (rf_path = 0; rf_path < hal_spec->rf_reg_path_num && rf_path < 4; rf_path++) {
 		if (!(rx_path_bmp & BIT(rf_path)))
