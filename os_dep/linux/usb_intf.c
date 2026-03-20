@@ -16,6 +16,7 @@
 
 #include <drv_types.h>
 #include <hal_data.h>
+#include <rtw_cooperative_rx.h>
 
 #include <platform_ops.h>
 
@@ -1407,6 +1408,9 @@ static void rtw_dev_remove(struct usb_interface *pusb_intf)
 
 	RTW_INFO("+rtw_dev_remove\n");
 
+	if (padapter)
+		rtw_coop_rx_remove_adapter(padapter);
+
 	dvobj->processing_dev_remove = _TRUE;
 
 	/* TODO: use rtw_os_ndevs_deinit instead at the first stage of driver's dev deinit function */
@@ -1494,9 +1498,12 @@ static int __init rtw_drv_entry(void)
 	rtw_ndev_notifier_register();
 	rtw_inetaddr_notifier_register();
 
+	rtw_coop_rx_init();
+
 	ret = usb_register(&usb_drv.usbdrv);
 
 	if (ret != 0) {
+		rtw_coop_rx_deinit();
 		usb_drv.drv_registered = _FALSE;
 		rtw_suspend_lock_uninit();
 		rtw_drv_proc_deinit();
@@ -1517,6 +1524,8 @@ exit:
 static void __exit rtw_drv_halt(void)
 {
 	RTW_PRINT("module exit start\n");
+
+	rtw_coop_rx_deinit();
 
 	usb_drv.drv_registered = _FALSE;
 

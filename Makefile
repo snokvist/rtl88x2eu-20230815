@@ -2546,6 +2546,7 @@ rtk_core :=	core/rtw_cmd.o \
 		core/rtw_txpwr.o \
 		core/monitor/rtw_radiotap.o \
 		core/rtw_recv.o \
+		core/rtw_cooperative_rx.o \
 		core/rtw_sta_mgt.o \
 		core/rtw_ap.o \
 		core/wds/rtw_wds.o \
