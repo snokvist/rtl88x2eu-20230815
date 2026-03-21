@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# coop-rx-start.sh — Start cooperative RX diversity with two RTL8822EU adapters
+# coop-rx-start.sh — Start cooperative RX diversity with two RTL8822CU adapters
 #
 # Usage: sudo ./coop-rx-start.sh [SSID] [PSK]
 #   Defaults: SSID=waybeam-03, PSK=waybeam-03
@@ -22,7 +22,7 @@ set -e
 
 SSID="${1:-waybeam-03}"
 PSK="${2:-waybeam-03}"
-MODULE_PATH="$(cd "$(dirname "$0")/.." && pwd)/8812eu.ko"
+MODULE_PATH="$(cd "$(dirname "$0")/.." && pwd)/88x2cu.ko"
 WAIT_ASSOC=20
 
 RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[1;33m'; NC='\033[0m'
@@ -32,7 +32,7 @@ fail()  { echo -e "${RED}[-]${NC} $*"; exit 1; }
 
 [[ $EUID -eq 0 ]] || fail "Must run as root"
 
-# --- Find RTL8822EU USB devices ------------------------------------------------
+# --- Find RTL8822CU USB devices ------------------------------------------------
 
 find_rtl_usb_devices() {
     local devices=()
@@ -40,7 +40,7 @@ find_rtl_usb_devices() {
         [ -f "$dev/idVendor" ] || continue
         local vid=$(cat "$dev/idVendor" 2>/dev/null)
         local pid=$(cat "$dev/idProduct" 2>/dev/null)
-        if [[ "$vid" == "0bda" && ("$pid" == "e822" || "$pid" == "a82a" || "$pid" == "a81a") ]]; then
+        if [[ "$vid" == "0bda" && "$pid" == "c812" ]]; then
             devices+=("$(basename "$dev")")
         fi
     done
@@ -49,7 +49,7 @@ find_rtl_usb_devices() {
 
 USB_DEVICES=($(find_rtl_usb_devices))
 if [[ ${#USB_DEVICES[@]} -lt 2 ]]; then
-    fail "Need 2 RTL8822EU USB devices (0bda:e822/a82a/a81a), found ${#USB_DEVICES[@]}: ${USB_DEVICES[*]}"
+    fail "Need 2 RTL8822CU USB devices (0bda:c812), found ${#USB_DEVICES[@]}: ${USB_DEVICES[*]}"
 fi
 USB_PRIMARY="${USB_DEVICES[0]}"
 USB_HELPER="${USB_DEVICES[1]}"
@@ -65,13 +65,13 @@ pkill wpa_supplicant 2>/dev/null || true
 sleep 1
 
 # Unload driver FIRST — ensures no active I/O on any USB device
-if lsmod | grep -q "^8812eu"; then
+if lsmod | grep -q "^88x2cu"; then
     info "Unloading driver (ensures safe USB unbind)..."
     for iface in /sys/class/net/wl*; do
         ip link set "$(basename "$iface")" down 2>/dev/null
     done
     sleep 1
-    rmmod 8812eu 2>/dev/null || warn "rmmod failed — may need reboot"
+    rmmod 88x2cu 2>/dev/null || warn "rmmod failed — may need reboot"
     sleep 2
 fi
 
@@ -95,7 +95,7 @@ for dev in /sys/class/net/wl*; do
     name=$(basename "$dev")
     [ -d "$dev/coop_rx" ] && PRIMARY="$name" && break
 done
-[[ -n "$PRIMARY" ]] || fail "No RTL8822EU interface found after driver load"
+[[ -n "$PRIMARY" ]] || fail "No RTL8822CU interface found after driver load"
 info "Primary interface: $PRIMARY"
 
 # --- Phase 3: Connect primary -------------------------------------------------
@@ -225,5 +225,7 @@ cat /sys/kernel/debug/rtw_coop_rx/stats 2>/dev/null
 echo ""
 info "Commands:"
 echo "  Monitor:  sudo python3 $(cd "$(dirname "$0")" && pwd)/coop-rx-monitor.py"
-echo "  Stats:    watch -n1 cat /sys/kernel/debug/rtw_coop_rx/stats"
+echo "  Test:     sudo $(cd "$(dirname "$0")" && pwd)/coop-rx-test.sh"
 echo "  Stop:     sudo $(cd "$(dirname "$0")" && pwd)/coop-rx-stop.sh"
+echo ""
+echo "  For AP mode, see: coop-rx-ap-test-start.sh"

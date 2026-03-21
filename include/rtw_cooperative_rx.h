@@ -52,6 +52,8 @@ struct coop_rx_stats {
 	atomic_t helper_rx_no_sta;	/* sta_info not found */
 	atomic_t helper_rx_deferred;	/* frames enqueued to pending */
 	atomic_t helper_rx_backpressure;/* dropped: pending queue full */
+	atomic_t helper_rx_rssi_better;	/* helper RSSI > primary avg */
+	atomic_t helper_rx_rssi_worse;	/* helper RSSI <= primary avg */
 	atomic_t fallback_events;	/* helper disappeared/failed */
 	atomic_t pair_events;		/* successful pairings */
 	atomic_t unpair_events;		/* teardown events */
@@ -62,8 +64,13 @@ struct coop_rx_stats {
  * The AMPDU reorder window handles dedup for QoS/AMPDU traffic,
  * but non-QoS frames need explicit tracking.
  */
+struct coop_nonqos_seq_entry {
+	u16 seq;
+	u8 ta[ETH_ALEN];	/* per-STA key: same seq from different TAs is not a dup */
+};
+
 struct coop_nonqos_seq_cache {
-	u16 seqs[COOP_NONQOS_SEQ_CACHE_SZ];
+	struct coop_nonqos_seq_entry entries[COOP_NONQOS_SEQ_CACHE_SZ];
 	u32 valid;	/* bitmask of occupied slots (avoids seq 0 false positive) */
 	u8 idx;
 };
@@ -77,7 +84,7 @@ struct cooperative_rx_group {
 	spinlock_t lock;
 	enum coop_rx_state state;
 
-	/* Primary adapter — the one with active STA connection */
+	/* Primary adapter — the one with active STA or AP connection */
 	_adapter *primary;
 	struct dvobj_priv *primary_dvobj;
 
@@ -87,7 +94,7 @@ struct cooperative_rx_group {
 	int num_helpers;
 
 	/* Session binding — which BSS we're filtering for */
-	u8 bound_bssid[ETH_ALEN];	/* BSSID = AP MAC (TA) in infra BSS */
+	u8 bound_bssid[ETH_ALEN];	/* STA: AP MAC, AP: own MAC */
 	u8 bound_channel;
 	u8 bound_bw;
 

@@ -8,12 +8,14 @@
  * adapter's RX path, improving robustness under fading/interference.
  *
  * Architecture:
- *   - Primary adapter operates normally in STA mode
- *   - Helper adapter(s) in monitor mode on the same channel/BSSID
+ *   - Primary adapter operates normally in STA or AP mode
+ *   - Helper adapter(s) in monitor mode on the same channel
  *   - Helper RX frames are SW-decrypted and injected into primary's
  *     recv_func_posthandle() (decrypt → defrag → reorder)
  *   - CCMP PN replay check + reorder window provide duplicate suppression
  *   - One coherent RX stream is delivered to the network stack
+ *   - STA mode: captures AP→STA downlink (to_fr_ds=2)
+ *   - AP mode: captures STA→AP uplink (to_fr_ds=1)
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -24,8 +26,11 @@
 #define pr_fmt(fmt) "rtw_coop_rx: " fmt
 
 #include <drv_types.h>
+#include <hal_data.h>
 #include <rtw_recv.h>
 #include <rtw_cooperative_rx.h>
+#include <linux/rtnetlink.h>
+#include <net/net_namespace.h>
 
 #ifdef CONFIG_DEBUG_FS
 #include <linux/debugfs.h>
@@ -52,6 +57,8 @@ static void coop_rx_stats_reset(struct coop_rx_stats *stats)
 	atomic_set(&stats->helper_rx_no_sta, 0);
 	atomic_set(&stats->helper_rx_deferred, 0);
 	atomic_set(&stats->helper_rx_backpressure, 0);
+	atomic_set(&stats->helper_rx_rssi_better, 0);
+	atomic_set(&stats->helper_rx_rssi_worse, 0);
 	atomic_set(&stats->fallback_events, 0);
 	atomic_set(&stats->pair_events, 0);
 	atomic_set(&stats->unpair_events, 0);
@@ -62,6 +69,7 @@ int rtw_coop_rx_drop_primary = 0;
 
 /* Global cooperative group singleton */
 struct cooperative_rx_group *rtw_coop_rx_group = NULL;
+
 
 /*
  * ============================================================
@@ -344,6 +352,53 @@ void rtw_coop_rx_remove_adapter(_adapter *adapter)
 }
 
 /*
+ * Auto-discover helper adapters among all netdevices in the same
+ * network namespace. Finds interfaces using rtw_netdev_ops that
+ * are not the primary, and adds them as helpers.
+ * Must be called from process context (takes rtnl_lock).
+ */
+static int rtw_coop_rx_auto_discover_helpers(_adapter *primary)
+{
+	struct net_device *ndev;
+	struct net *net;
+	int added = 0;
+
+	if (!primary || !primary->pnetdev)
+		return 0;
+
+	net = dev_net(primary->pnetdev);
+
+	rtnl_lock();
+	for_each_netdev(net, ndev) {
+		_adapter *candidate;
+
+		if (ndev == primary->pnetdev)
+			continue;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29))
+		if (ndev->netdev_ops != &rtw_netdev_ops)
+			continue;
+#else
+		continue; /* Cannot verify on old kernels */
+#endif
+
+		candidate = rtw_netdev_priv(ndev);
+		if (!candidate)
+			continue;
+
+		if (rtw_coop_rx_add_helper(candidate) == 0)
+			added++;
+	}
+	rtnl_unlock();
+
+	if (added > 0)
+		RTW_INFO("%s: auto-discovered %d helper(s)\n",
+			 __func__, added);
+
+	return added;
+}
+
+/*
  * Bind cooperative session to primary's current BSS.
  * Called after primary successfully associates.
  */
@@ -365,17 +420,33 @@ int rtw_coop_rx_bind_session(_adapter *primary)
 	pmlmepriv = &primary->mlmepriv;
 	cur_network = &pmlmepriv->cur_network;
 
-	if (!check_fwstate(pmlmepriv, WIFI_STATION_STATE) ||
-	    !check_fwstate(pmlmepriv, WIFI_ASOC_STATE)) {
-		RTW_WARN("%s: primary not associated in STA mode\n", __func__);
+	if (check_fwstate(pmlmepriv, WIFI_AP_STATE)) {
+		/* AP mode: considered "associated" once started */
+		if (!check_fwstate(pmlmepriv, WIFI_ASOC_STATE)) {
+			RTW_WARN("%s: AP not started\n", __func__);
+			return -ENOTCONN;
+		}
+	} else if (check_fwstate(pmlmepriv, WIFI_STATION_STATE)) {
+		if (!check_fwstate(pmlmepriv, WIFI_ASOC_STATE)) {
+			RTW_WARN("%s: primary not associated\n", __func__);
+			return -ENOTCONN;
+		}
+	} else {
+		RTW_WARN("%s: unsupported mode (not STA or AP)\n", __func__);
 		return -ENOTCONN;
 	}
 
 	spin_lock_irqsave(&grp->lock, flags);
 
-	/* Capture BSS context (BSSID = AP MAC in infra BSS) */
-	_rtw_memcpy(grp->bound_bssid,
-		     cur_network->network.MacAddress, ETH_ALEN);
+	/* Capture BSS context.
+	 * AP mode: BSSID = our own MAC.
+	 * STA mode: BSSID = AP MAC (Addr2 in From-DS frames). */
+	if (check_fwstate(pmlmepriv, WIFI_AP_STATE))
+		_rtw_memcpy(grp->bound_bssid,
+			     adapter_mac_addr(primary), ETH_ALEN);
+	else
+		_rtw_memcpy(grp->bound_bssid,
+			     cur_network->network.MacAddress, ETH_ALEN);
 	grp->bound_channel = primary->mlmeextpriv.cur_channel;
 	grp->bound_bw = primary->mlmeextpriv.cur_bwmode;
 
@@ -428,10 +499,29 @@ int rtw_coop_rx_enable_helper_monitor(_adapter *helper, u8 channel)
 	u8 bw = CHANNEL_WIDTH_20;
 	u8 offset = HAL_PRIME_CHNL_OFFSET_DONT_CARE;
 
+#ifdef CONFIG_RTW_ACS
+	/* Disable ACS BEFORE bringing the interface up — ndo_open calls
+	 * rtw_acs_start() when acs_mode is set. Clear it first so ACS
+	 * never activates on the helper. */
+	helper->registrypriv.acs_mode = 0;
+#endif
+
+	/* Ensure the interface is UP — the driver's ndo_open handler
+	 * initializes USB URBs and hardware state. Without this, the
+	 * radio doesn't receive any frames. Safe to call if already UP. */
+	if (!(ndev->flags & IFF_UP)) {
+		rtnl_lock();
+		dev_open(ndev, NULL);
+		rtnl_unlock();
+	}
+
 	/* Set netdev type for radiotap headers */
 	ndev->type = ARPHRD_IEEE80211_RADIOTAP;
 
-	/* Update cfg80211 wdev type so iw/NM report "monitor" correctly */
+	/* Update cfg80211 wdev type so iw/NM report "monitor" correctly.
+	 * Note: on systems with NetworkManager, userspace should run
+	 * `nmcli dev set <helper> managed no` before binding to prevent
+	 * NM from interfering. The coop-rx-start.sh script handles this. */
 	if (helper->rtw_wdev)
 		helper->rtw_wdev->iftype = NL80211_IFTYPE_MONITOR;
 
@@ -439,6 +529,10 @@ int rtw_coop_rx_enable_helper_monitor(_adapter *helper, u8 channel)
 	 * sets RCR to promiscuous, opens RX filter maps */
 	rtw_set_802_11_infrastructure_mode(helper, Ndis802_11Monitor, 0);
 	rtw_setopmode_cmd(helper, Ndis802_11Monitor, RTW_CMDF_WAIT_ACK);
+
+#ifdef CONFIG_RTW_ACS
+	rtw_acs_stop(helper);
+#endif
 
 	/* Match primary's bandwidth so helper receives all sub-carriers */
 	if (grp && grp->primary) {
@@ -565,7 +659,8 @@ void rtw_coop_rx_unbind_session(void)
  * seen sequence numbers.
  */
 
-static bool coop_nonqos_is_dup(struct cooperative_rx_group *grp, u16 seq_num)
+static bool coop_nonqos_check_and_record(struct cooperative_rx_group *grp,
+					  u16 seq_num, const u8 *ta)
 {
 	struct coop_nonqos_seq_cache *cache = &grp->nonqos_cache;
 	int i;
@@ -574,12 +669,15 @@ static bool coop_nonqos_is_dup(struct cooperative_rx_group *grp, u16 seq_num)
 	BUILD_BUG_ON(COOP_NONQOS_SEQ_CACHE_SZ > 32);
 
 	for (i = 0; i < COOP_NONQOS_SEQ_CACHE_SZ; i++) {
-		if (cache->valid & BIT(i) && cache->seqs[i] == seq_num)
+		if ((cache->valid & BIT(i)) &&
+		    cache->entries[i].seq == seq_num &&
+		    _rtw_memcmp(cache->entries[i].ta, ta, ETH_ALEN) == _TRUE)
 			return true;
 	}
 
 	/* Not a dup — record it */
-	cache->seqs[cache->idx] = seq_num;
+	cache->entries[cache->idx].seq = seq_num;
+	_rtw_memcpy(cache->entries[cache->idx].ta, ta, ETH_ALEN);
 	cache->valid |= BIT(cache->idx);
 	cache->idx = (cache->idx + 1) % COOP_NONQOS_SEQ_CACHE_SZ;
 	return false;
@@ -703,7 +801,6 @@ int rtw_coop_rx_submit_helper_frame(union recv_frame *precvframe,
 	struct sta_info *psta;
 	union recv_frame *pframe_primary;
 	struct recv_priv *precvpriv_primary;
-	int ret = _FAIL;
 
 	rcu_read_lock();
 
@@ -723,30 +820,49 @@ int rtw_coop_rx_submit_helper_frame(union recv_frame *precvframe,
 
 	atomic_inc(&grp->stats.helper_rx_candidates);
 
-	/* Only accept downlink frames (AP→STA, From DS=1 To DS=0).
-	 * Uplink frames captured in monitor mode are our own TX echoes
-	 * or other STAs' traffic — useless for cooperative RX. */
-	if (pattrib->to_fr_ds != 2) {
+	/* Direction validation:
+	 * STA mode: accept to_fr_ds=2 (AP→STA downlink)
+	 * AP mode:  accept to_fr_ds=1 (STA→AP uplink) */
+	if (pattrib->to_fr_ds == 2) {
+		/* Downlink AP→STA: STA-mode cooperative RX */
+	} else if (pattrib->to_fr_ds == 1) {
+		/* Uplink STA→AP: AP-mode cooperative RX */
+		if (!check_fwstate(&primary->mlmepriv, WIFI_AP_STATE)) {
+			atomic_inc(&grp->stats.helper_rx_foreign);
+			rcu_read_unlock();
+			return _FAIL;
+		}
+	} else {
 		atomic_inc(&grp->stats.helper_rx_foreign);
 		rcu_read_unlock();
 		return _FAIL;
 	}
 
-	/* Validate: TA must be our bound AP (BSSID).
-	 * For downlink (to_fr_ds=2): TA = Addr2 = AP MAC. */
-	if (_rtw_memcmp(pattrib->ta, grp->bound_bssid, ETH_ALEN) == _FALSE) {
-		atomic_inc(&grp->stats.helper_rx_foreign);
-		rcu_read_unlock();
-		return _FAIL;
-	}
-
-	/* Validate: RA must match primary's MAC (unicast) or be broadcast */
-	if (!IS_MCAST(pattrib->ra) &&
-	    _rtw_memcmp(pattrib->ra, adapter_mac_addr(primary),
-			ETH_ALEN) == _FALSE) {
-		atomic_inc(&grp->stats.helper_rx_foreign);
-		rcu_read_unlock();
-		return _FAIL;
+	/* Validate TA/RA based on direction.
+	 * STA mode: TA must be bound AP (BSSID), RA must be our MAC or bcast.
+	 * AP mode:  RA must be our AP MAC (= bound_bssid). */
+	if (pattrib->to_fr_ds == 2) {
+		if (_rtw_memcmp(pattrib->ta, grp->bound_bssid,
+				ETH_ALEN) == _FALSE) {
+			atomic_inc(&grp->stats.helper_rx_foreign);
+			rcu_read_unlock();
+			return _FAIL;
+		}
+		if (!IS_MCAST(pattrib->ra) &&
+		    _rtw_memcmp(pattrib->ra, adapter_mac_addr(primary),
+				ETH_ALEN) == _FALSE) {
+			atomic_inc(&grp->stats.helper_rx_foreign);
+			rcu_read_unlock();
+			return _FAIL;
+		}
+	} else {
+		/* AP mode (to_fr_ds=1): RA = our AP MAC */
+		if (_rtw_memcmp(pattrib->ra, grp->bound_bssid,
+				ETH_ALEN) == _FALSE) {
+			atomic_inc(&grp->stats.helper_rx_foreign);
+			rcu_read_unlock();
+			return _FAIL;
+		}
 	}
 
 	/* CRC/ICV errors are useless */
@@ -834,7 +950,8 @@ int rtw_coop_rx_submit_helper_frame(union recv_frame *precvframe,
 		bool is_dup;
 
 		spin_lock_irqsave(&grp->lock, flags);
-		is_dup = coop_nonqos_is_dup(grp, pattrib->seq_num);
+		is_dup = coop_nonqos_check_and_record(grp, pattrib->seq_num,
+						      pattrib->ta);
 		spin_unlock_irqrestore(&grp->lock, flags);
 
 		if (is_dup) {
@@ -1085,9 +1202,16 @@ void rtw_coop_rx_drain_tasklet(unsigned long data)
 			}
 		}
 
-		if (ret == _SUCCESS || ret == RTW_RX_HANDLED)
+		if (ret == _SUCCESS || ret == RTW_RX_HANDLED) {
+			s8 helper_rssi = pa->phy_info.recv_signal_power;
+			s8 primary_rssi = primary->recvpriv.rssi;
+
 			atomic_inc(&grp->stats.helper_rx_accepted);
-		else
+			if (helper_rssi > primary_rssi)
+				atomic_inc(&grp->stats.helper_rx_rssi_better);
+			else
+				atomic_inc(&grp->stats.helper_rx_rssi_worse);
+		} else
 			atomic_inc(&grp->stats.helper_rx_dup_dropped);
 
 		processed++;
@@ -1106,12 +1230,16 @@ void rtw_coop_rx_drain_tasklet(unsigned long data)
  * ============================================================
  *
  * Provides /sys/class/net/wlanX/coop_rx/ directory with:
- *   enabled    - read/write 0/1
- *   role       - read: "primary", "helper", "none"
- *   stats      - read: statistics counters
- *   pair       - write: interface name to pair as helper
- *   unpair     - write: interface name to unpair
- *   bind       - write: 1 to bind session (after association)
+ *   enabled       - read/write 0/1
+ *   role          - read: "primary", "helper", "none"
+ *   stats         - read: statistics counters
+ *   info          - read: machine-parseable setup summary (key=value)
+ *   pair          - write: interface name to pair as helper
+ *   unpair        - write: interface name to unpair
+ *   auto_pair     - write: 1 to set primary and auto-discover helpers
+ *   bind          - write: 1 to bind session (after association)
+ *   reset_stats   - write: 1 to zero all counters
+ *   drop_primary  - read/write: debug flag to drop primary RX data
  */
 
 static ssize_t coop_rx_show_enabled(struct device *dev,
@@ -1174,20 +1302,20 @@ static ssize_t coop_rx_show_role(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%s\n", role);
 }
 
-static ssize_t coop_rx_show_stats(struct device *dev,
-				  struct device_attribute *attr, char *buf)
+/*
+ * Common stats formatter — shared between sysfs and debugfs.
+ * Returns number of bytes written.
+ */
+static int coop_rx_format_stats(char *buf, size_t size,
+				struct cooperative_rx_group *grp)
 {
-	struct cooperative_rx_group *grp = READ_ONCE(rtw_coop_rx_group);
-	int len = 0;
-
-	if (!grp)
-		return scnprintf(buf, PAGE_SIZE, "disabled\n");
-
-	len += scnprintf(buf + len, PAGE_SIZE - len,
-		"state: %d\n"
+	return scnprintf(buf, size,
+		"state: %d (%s)\n"
+		"primary: %s\n"
 		"num_helpers: %d\n"
 		"bound_bssid: "MAC_FMT"\n"
 		"bound_channel: %u\n"
+		"bound_bw: %u\n"
 		"helper_rx_candidates: %d\n"
 		"helper_rx_accepted: %d\n"
 		"helper_rx_dup_dropped: %d\n"
@@ -1198,14 +1326,21 @@ static ssize_t coop_rx_show_stats(struct device *dev,
 		"helper_rx_no_sta: %d\n"
 		"helper_rx_deferred: %d\n"
 		"helper_rx_backpressure: %d\n"
+		"helper_rx_rssi_better: %d\n"
+		"helper_rx_rssi_worse: %d\n"
 		"pending_count: %d\n"
 		"fallback_events: %d\n"
 		"pair_events: %d\n"
 		"unpair_events: %d\n",
 		grp->state,
+		grp->state == COOP_STATE_DISABLED ? "DISABLED" :
+		grp->state == COOP_STATE_IDLE ? "IDLE" :
+		grp->state == COOP_STATE_BINDING ? "BINDING" :
+		grp->state == COOP_STATE_ACTIVE ? "ACTIVE" : "?",
+		grp->primary ? "yes" : "no",
 		grp->num_helpers,
 		MAC_ARG(grp->bound_bssid),
-		grp->bound_channel,
+		grp->bound_channel, grp->bound_bw,
 		atomic_read(&grp->stats.helper_rx_candidates),
 		atomic_read(&grp->stats.helper_rx_accepted),
 		atomic_read(&grp->stats.helper_rx_dup_dropped),
@@ -1216,12 +1351,23 @@ static ssize_t coop_rx_show_stats(struct device *dev,
 		atomic_read(&grp->stats.helper_rx_no_sta),
 		atomic_read(&grp->stats.helper_rx_deferred),
 		atomic_read(&grp->stats.helper_rx_backpressure),
+		atomic_read(&grp->stats.helper_rx_rssi_better),
+		atomic_read(&grp->stats.helper_rx_rssi_worse),
 		atomic_read(&grp->pending_count),
 		atomic_read(&grp->stats.fallback_events),
 		atomic_read(&grp->stats.pair_events),
 		atomic_read(&grp->stats.unpair_events));
+}
 
-	return len;
+static ssize_t coop_rx_show_stats(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	struct cooperative_rx_group *grp = READ_ONCE(rtw_coop_rx_group);
+
+	if (!grp)
+		return scnprintf(buf, PAGE_SIZE, "disabled\n");
+
+	return coop_rx_format_stats(buf, PAGE_SIZE, grp);
 }
 
 static ssize_t coop_rx_store_pair(struct device *dev,
@@ -1243,8 +1389,8 @@ static ssize_t coop_rx_store_pair(struct device *dev,
 	if (ret)
 		return ret;
 
-	/* Find the helper interface by name */
-	helper_ndev = dev_get_by_name(&init_net, ifname);
+	/* Find the helper interface by name (namespace-aware) */
+	helper_ndev = rtw_get_same_net_ndev_by_name(ndev, ifname);
 	if (!helper_ndev) {
 		RTW_WARN("coop_rx: helper interface '%s' not found\n", ifname);
 		return -ENODEV;
@@ -1276,6 +1422,7 @@ static ssize_t coop_rx_store_unpair(struct device *dev,
 				    struct device_attribute *attr,
 				    const char *buf, size_t count)
 {
+	struct net_device *ndev = to_net_dev(dev);
 	struct net_device *helper_ndev;
 	_adapter *helper_adapter;
 	char ifname[IFNAMSIZ];
@@ -1284,7 +1431,7 @@ static ssize_t coop_rx_store_unpair(struct device *dev,
 	if (sscanf(buf, "%15s", ifname) != 1)
 		return -EINVAL;
 
-	helper_ndev = dev_get_by_name(&init_net, ifname);
+	helper_ndev = rtw_get_same_net_ndev_by_name(ndev, ifname);
 	if (!helper_ndev)
 		return -ENODEV;
 
@@ -1359,11 +1506,33 @@ static ssize_t coop_rx_store_drop_primary(struct device *dev,
 	return count;
 }
 
+static ssize_t coop_rx_store_auto_pair(struct device *dev,
+				       struct device_attribute *attr,
+				       const char *buf, size_t count)
+{
+	struct net_device *ndev = to_net_dev(dev);
+	_adapter *adapter = rtw_netdev_priv(ndev);
+	int val, ret;
+
+	if (kstrtoint(buf, 10, &val) || val != 1)
+		return -EINVAL;
+
+	/* Set this adapter as primary, then discover helpers */
+	ret = rtw_coop_rx_set_primary(adapter);
+	if (ret)
+		return ret;
+
+	rtw_coop_rx_auto_discover_helpers(adapter);
+	return count;
+}
+
 /*
  * coop_rx_info — machine-parseable cooperative setup summary.
  * Reports per-interface details using driver-internal data so
  * userspace doesn't need to call iw (which reports stale channel
  * info for monitor-mode helpers).
+ *
+ * Format: key=value lines, one per field.
  */
 static ssize_t coop_rx_show_info(struct device *dev,
 				 struct device_attribute *attr, char *buf)
@@ -1372,9 +1541,11 @@ static ssize_t coop_rx_show_info(struct device *dev,
 	int len = 0;
 	int i;
 
-	if (!grp)
+	if (!grp) {
 		return scnprintf(buf, PAGE_SIZE, "state=DISABLED\n");
+	}
 
+	/* Group-level info */
 	len += scnprintf(buf + len, PAGE_SIZE - len,
 		"state=%d\n"
 		"state_name=%s\n"
@@ -1393,6 +1564,7 @@ static ssize_t coop_rx_show_info(struct device *dev,
 		grp->num_helpers,
 		READ_ONCE(rtw_coop_rx_drop_primary));
 
+	/* Primary interface info */
 	if (grp->primary) {
 		_adapter *pri = grp->primary;
 		struct mlme_priv *pmlmepriv = &pri->mlmepriv;
@@ -1402,10 +1574,13 @@ static ssize_t coop_rx_show_info(struct device *dev,
 
 		len += scnprintf(buf + len, PAGE_SIZE - len,
 			"primary_iface=%s\n"
+			"primary_mode=%s\n"
 			"primary_channel=%u\n"
 			"primary_rssi=%d\n"
 			"primary_signal=%u\n",
 			pri->pnetdev ? pri->pnetdev->name : "?",
+			MLME_IS_AP(pri) ? "AP" :
+			MLME_IS_STA(pri) ? "STA" : "?",
 			pmlmeext->cur_channel,
 			precvpriv->rssi,
 			precvpriv->signal_strength);
@@ -1413,6 +1588,7 @@ static ssize_t coop_rx_show_info(struct device *dev,
 		if (check_fwstate(pmlmepriv, WIFI_ASOC_STATE) &&
 		    cur->Ssid.SsidLength > 0 &&
 		    cur->Ssid.SsidLength <= 32) {
+			/* Safe SSID output — replace non-printable chars */
 			char ssid_buf[33];
 			u32 slen = cur->Ssid.SsidLength;
 			u32 j;
@@ -1434,6 +1610,7 @@ static ssize_t coop_rx_show_info(struct device *dev,
 		}
 	}
 
+	/* Helper interface(s) info */
 	for (i = 0; i < grp->num_helpers && i < COOP_MAX_HELPERS; i++) {
 		_adapter *hlp = grp->helpers[i];
 
@@ -1469,6 +1646,7 @@ static DEVICE_ATTR(coop_rx_bind, 0200, NULL, coop_rx_store_bind);
 static DEVICE_ATTR(coop_rx_reset_stats, 0200, NULL, coop_rx_store_reset_stats);
 static DEVICE_ATTR(coop_rx_drop_primary, 0644,
 		   coop_rx_show_drop_primary, coop_rx_store_drop_primary);
+static DEVICE_ATTR(coop_rx_auto_pair, 0200, NULL, coop_rx_store_auto_pair);
 
 static struct attribute *coop_rx_attrs[] = {
 	&dev_attr_coop_rx_enabled.attr,
@@ -1478,6 +1656,7 @@ static struct attribute *coop_rx_attrs[] = {
 	&dev_attr_coop_rx_pair.attr,
 	&dev_attr_coop_rx_unpair.attr,
 	&dev_attr_coop_rx_bind.attr,
+	&dev_attr_coop_rx_auto_pair.attr,
 	&dev_attr_coop_rx_reset_stats.attr,
 	&dev_attr_coop_rx_drop_primary.attr,
 	NULL,
@@ -1515,54 +1694,17 @@ static struct dentry *coop_debugfs_dir;
 static int coop_debugfs_stats_show(struct seq_file *s, void *data)
 {
 	struct cooperative_rx_group *grp = READ_ONCE(rtw_coop_rx_group);
+	char buf[1024];
+	int len;
 
 	if (!grp) {
 		seq_puts(s, "cooperative RX: not initialized\n");
 		return 0;
 	}
 
-	seq_printf(s, "=== Cooperative RX Diversity Stats ===\n");
-	seq_printf(s, "state:                 %d (%s)\n", grp->state,
-		   grp->state == COOP_STATE_DISABLED ? "DISABLED" :
-		   grp->state == COOP_STATE_IDLE ? "IDLE" :
-		   grp->state == COOP_STATE_BINDING ? "BINDING" :
-		   grp->state == COOP_STATE_ACTIVE ? "ACTIVE" : "?");
-	seq_printf(s, "primary:               %s\n",
-		   grp->primary ? "yes" : "no");
-	seq_printf(s, "num_helpers:           %d\n", grp->num_helpers);
-	seq_printf(s, "bound_bssid:           "MAC_FMT"\n",
-		   MAC_ARG(grp->bound_bssid));
-	seq_printf(s, "bound_channel:         %u\n", grp->bound_channel);
-	seq_printf(s, "bound_bw:              %u\n", grp->bound_bw);
-	seq_printf(s, "\n--- Counters ---\n");
-	seq_printf(s, "helper_rx_candidates:  %d\n",
-		   atomic_read(&grp->stats.helper_rx_candidates));
-	seq_printf(s, "helper_rx_accepted:    %d\n",
-		   atomic_read(&grp->stats.helper_rx_accepted));
-	seq_printf(s, "helper_rx_dup_dropped: %d\n",
-		   atomic_read(&grp->stats.helper_rx_dup_dropped));
-	seq_printf(s, "helper_rx_pool_full:   %d\n",
-		   atomic_read(&grp->stats.helper_rx_pool_full));
-	seq_printf(s, "helper_rx_foreign:     %d\n",
-		   atomic_read(&grp->stats.helper_rx_foreign));
-	seq_printf(s, "helper_rx_crypto_err:  %d\n",
-		   atomic_read(&grp->stats.helper_rx_crypto_err));
-	seq_printf(s, "helper_rx_late:        %d\n",
-		   atomic_read(&grp->stats.helper_rx_late));
-	seq_printf(s, "helper_rx_no_sta:      %d\n",
-		   atomic_read(&grp->stats.helper_rx_no_sta));
-	seq_printf(s, "helper_rx_deferred:    %d\n",
-		   atomic_read(&grp->stats.helper_rx_deferred));
-	seq_printf(s, "helper_rx_backpressure:%d\n",
-		   atomic_read(&grp->stats.helper_rx_backpressure));
-	seq_printf(s, "pending_count:         %d\n",
-		   atomic_read(&grp->pending_count));
-	seq_printf(s, "fallback_events:       %d\n",
-		   atomic_read(&grp->stats.fallback_events));
-	seq_printf(s, "pair_events:           %d\n",
-		   atomic_read(&grp->stats.pair_events));
-	seq_printf(s, "unpair_events:         %d\n",
-		   atomic_read(&grp->stats.unpair_events));
+	seq_puts(s, "=== Cooperative RX Diversity Stats ===\n");
+	len = coop_rx_format_stats(buf, sizeof(buf), grp);
+	seq_write(s, buf, len);
 
 	return 0;
 }

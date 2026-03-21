@@ -297,10 +297,11 @@ else
     fi
 
     # Re-pair and re-bind for subsequent tests
+    nmcli device set "$HELPER" managed no 2>/dev/null || true
     ip link set "$HELPER" up 2>/dev/null || true
     echo "$HELPER" > "/sys/class/net/$PRIMARY/coop_rx/coop_rx_pair" 2>/dev/null || true
     echo 1 > "/sys/class/net/$PRIMARY/coop_rx/coop_rx_bind" 2>/dev/null || true
-    sleep 1
+    sleep 2
     unset S
 fi
 
@@ -350,10 +351,11 @@ else
     DETAIL="loss=${LOSS}% fallback_delta=${FALLBACK_DELTA}"
 
     # Re-pair and re-bind
+    nmcli device set "$HELPER" managed no 2>/dev/null || true
     ip link set "$HELPER" up 2>/dev/null || true
     echo "$HELPER" > "/sys/class/net/$PRIMARY/coop_rx/coop_rx_pair" 2>/dev/null || true
     echo 1 > "/sys/class/net/$PRIMARY/coop_rx/coop_rx_bind" 2>/dev/null || true
-    sleep 1
+    sleep 2
 
     if [ "$TFAIL" -eq 0 ]; then
         pass "Test 5: Unpair mid-stream — ${DETAIL} (no crash, fallback fired)"
@@ -677,8 +679,9 @@ else
         MSGS=""
         TFAIL=0
 
-        # Allow up to 200 frames of background traffic between reset and read
-        RESET_TOL=200
+        # Allow frames from background traffic between reset and read.
+        # With a 4000kbps video stream, ~500 frames/sec arrive continuously.
+        RESET_TOL=500
         for key in helper_rx_candidates helper_rx_accepted helper_rx_dup_dropped \
                    helper_rx_pool_full helper_rx_foreign helper_rx_crypto_err \
                    helper_rx_late helper_rx_no_sta helper_rx_deferred \

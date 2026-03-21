@@ -121,6 +121,11 @@ MODULE_PARM_DESC(rtw_nb_config, "5M/10M/Normal bandwidth configuration");
 module_param(rtw_cooperative_rx, int, 0644);
 MODULE_PARM_DESC(rtw_cooperative_rx, "Enable cooperative RX diversity (0=off, 1=on)");
 
+extern int rtw_coop_rx_drop_primary;
+module_param(rtw_coop_rx_drop_primary, int, 0644);
+MODULE_PARM_DESC(rtw_coop_rx_drop_primary,
+	"Debug: drop primary RX data frames when cooperative RX active (0=off, 1=on)");
+
 module_param(rtw_ips_mode, int, 0644);
 MODULE_PARM_DESC(rtw_ips_mode, "The default IPS mode");
 
