@@ -44,4 +44,4 @@ if [[ "$NM_RESTART" == "1" ]] || [[ "$1" == "--restart-nm" ]]; then
     systemctl restart NetworkManager 2>/dev/null || true
 fi
 
-echo "[+] Done. Driver still loaded — use 'rmmod 88x2cu' to unload."
+echo "[+] Done. Driver still loaded — use 'rmmod 8812eu' to unload."

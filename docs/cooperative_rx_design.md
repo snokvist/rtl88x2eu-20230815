@@ -1,11 +1,11 @@
 # Cooperative RX Diversity Mode — Design Document
-## RTL8822CU Vendor Driver (rtl88x2cu-20230728)
+## RTL8812EU Vendor Driver (rtl88x2eu-20230815)
 
 ### Executive Feasibility Summary
 
 **Verdict: FEASIBLE with careful implementation.**
 
-The RTL8822CU vendor driver uses a cfg80211 + custom vendor MLME stack (NOT
+The RTL8812EU vendor driver uses a cfg80211 + custom vendor MLME stack (NOT
 mac80211). The RX path is entirely in-driver, giving us full control over
 frame processing order. Two separate identical USB adapters each have their
 own `dvobj_priv` and `_adapter` structures, but can be linked via a new
@@ -389,7 +389,7 @@ With helper paired and active:
 
 **Cooperative RX requires both adapters to use the same kernel module.**
 
-Mixing different Realtek drivers (e.g. RTL8822CU primary + RTL8812AU helper)
+Mixing different Realtek drivers (e.g. RTL8812EU primary + RTL8812AU helper)
 is **not possible** for the following architectural reasons:
 
 | Barrier | Detail |
@@ -403,7 +403,7 @@ is **not possible** for the following architectural reasons:
 
 **What DOES work:**
 
-- Two identical chipset adapters (e.g. two RTL8822CU) loaded by the same
+- Two identical chipset adapters (e.g. two RTL8812EU) loaded by the same
   driver module — this is the tested and supported configuration.
 - The code can be **ported independently** to other Realtek vendor drivers
   (e.g. rtl8812au, rtl8812eu from [libc0607](https://github.com/libc0607)).

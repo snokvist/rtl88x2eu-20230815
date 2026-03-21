@@ -63,4 +63,4 @@ rm -f /tmp/coop_rx_ap_test.conf /tmp/coop_ap_test_sta.conf
 info "Restarting NetworkManager..."
 systemctl start NetworkManager 2>/dev/null || true
 
-info "Done. Run 'sudo rmmod 88x2cu' to unload driver."
+info "Done. Run 'sudo rmmod 8812eu' to unload driver."

@@ -10,7 +10,7 @@
 #   - Two RTL8822CU USB adapters on this machine
 #   - Remote device at REMOTE_HOST reachable via ethernet (SSH)
 #   - Remote device has a WiFi interface that can connect as STA
-#   - Module built and available at ../88x2cu.ko
+#   - Module built and available at ../8812eu.ko
 #
 # Test topology:
 #   LOCAL (this machine)              REMOTE (via ethernet SSH)
@@ -42,7 +42,7 @@ AP_SSID="coop-rx-ap-test"
 AP_PSK="testpassword123"
 AP_CHANNEL="${AP_CHANNEL:-149}"
 AP_COUNTRY="${AP_COUNTRY:-SE}"
-MODULE_PATH="$(cd "$(dirname "$0")/.." && pwd)/88x2cu.ko"
+MODULE_PATH="$(cd "$(dirname "$0")/.." && pwd)/8812eu.ko"
 
 RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[1;33m'; CYN='\033[0;36m'; NC='\033[0m'
 BOLD='\033[1m'
@@ -63,7 +63,7 @@ REMOTE_WIFI=$(ssh -o ConnectTimeout=3 -o BatchMode=yes "root@${REMOTE_HOST}" \
 [[ -n "$REMOTE_WIFI" ]] || fail "No WiFi interface found on remote"
 info "Remote WiFi interface: $REMOTE_WIFI"
 
-# --- Find local RTL8822CU USB devices ----------------------------------------
+# --- Find local RTL8812EU USB devices ----------------------------------------
 
 find_rtl_usb_devices() {
     local devices=()
@@ -71,7 +71,7 @@ find_rtl_usb_devices() {
         [ -f "$dev/idVendor" ] || continue
         local vid=$(cat "$dev/idVendor" 2>/dev/null)
         local pid=$(cat "$dev/idProduct" 2>/dev/null)
-        if [[ "$vid" == "0bda" && "$pid" == "c812" ]]; then
+        if [[ "$vid" == "0bda" && "$pid" == "818B" || "$pid" == "A81A" ]]; then
             devices+=("$(basename "$dev")")
         fi
     done
@@ -80,7 +80,7 @@ find_rtl_usb_devices() {
 
 USB_DEVICES=($(find_rtl_usb_devices))
 if [[ ${#USB_DEVICES[@]} -lt 2 ]]; then
-    fail "Need 2 RTL8822CU USB devices, found ${#USB_DEVICES[@]}"
+    fail "Need 2 RTL8812EU USB devices, found ${#USB_DEVICES[@]}"
 fi
 info "USB devices: ${USB_DEVICES[*]}"
 
@@ -99,13 +99,13 @@ systemctl stop NetworkManager 2>/dev/null || true
 pkill wpa_supplicant 2>/dev/null || true
 sleep 1
 
-if lsmod | grep -q "^88x2cu"; then
+if lsmod | grep -q "^8812eu"; then
     info "Unloading existing driver..."
     for iface in /sys/class/net/wl*; do
         [ -d "$iface" ] && ip link set "$(basename "$iface")" down 2>/dev/null
     done
     sleep 1
-    rmmod 88x2cu 2>/dev/null || warn "rmmod failed"
+    rmmod 8812eu 2>/dev/null || warn "rmmod failed"
     sleep 2
 fi
 

@@ -3,7 +3,7 @@
 ## What WORKS
 
 1. **Driver compiles cleanly** with cooperative RX code — no warnings
-2. **Module loads** with `rtw_cooperative_rx=1` — parameter visible at `/sys/module/88x2cu/parameters/`
+2. **Module loads** with `rtw_cooperative_rx=1` — parameter visible at `/sys/module/8812eu/parameters/`
 3. **sysfs** `coop_rx/` directory appears on all interfaces with 10 attributes
    (`enabled`, `role`, `stats`, `info`, `pair`, `unpair`, `auto_pair`, `bind`,
    `reset_stats`, `drop_primary`)
@@ -209,7 +209,7 @@ Helper adapter (monitor mode via driver internal API)
 
 ## Hardware
 
-- Two RTL8822CU USB NICs (`0bda:c812`)
+- Two RTL8812EU USB NICs (`0bda:818B` or `0bda:A81A`)
 - On separate USB controllers (bus 1 and bus 7)
 - AP: `waybeam-03` BSSID `98:03:cf:cf:a4:28`, ch157 (5785 MHz), WPA2-PSK CCMP
 - Host: Linux 6.14.0-37-generic, NL regulatory domain
