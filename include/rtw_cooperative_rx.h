@@ -22,6 +22,11 @@
 #include <linux/if_ether.h>
 #include <linux/compiler.h>
 
+#ifdef CONFIG_COOP_RX_KERNEL_CRYPTO
+#include <crypto/aead.h>
+#include <linux/scatterlist.h>
+#endif
+
 /* Forward declarations — full definitions come from drv_types.h */
 struct _ADAPTER;
 typedef struct _ADAPTER _adapter;
@@ -57,6 +62,8 @@ struct coop_rx_stats {
 	atomic_t fallback_events;	/* helper disappeared/failed */
 	atomic_t pair_events;		/* successful pairings */
 	atomic_t unpair_events;		/* teardown events */
+	atomic_t helper_rx_kern_crypto;	/* frames decrypted via kernel crypto */
+	atomic_long_t helper_rx_bytes;	/* bytes delivered from helper frames */
 };
 
 /*
@@ -101,12 +108,27 @@ struct cooperative_rx_group {
 	/* Non-QoS dedup cache */
 	struct coop_nonqos_seq_cache nonqos_cache;
 
+#ifdef CONFIG_COOP_RX_KERNEL_CRYPTO
+	/* Kernel crypto transforms for accelerated helper decrypt.
+	 * Allocated in process context (bind_session), used from
+	 * softirq (drain_tasklet). NULL = fall back to SW path. */
+	struct crypto_aead *tfm_ccm;	/* ccm(aes) for CCMP-128 */
+	struct crypto_aead *tfm_ccm_256;/* ccm(aes) for CCMP-256 */
+	struct crypto_aead *tfm_gcm;	/* gcm(aes) for GCMP-128/256 */
+#endif
+
 	/* Deferred processing: helper enqueues, drain tasklet processes */
 	_queue pending_queue;		/* validated frames awaiting processing */
 	_tasklet coop_rx_tasklet;	/* drains pending_queue */
 	atomic_t pending_count;		/* backpressure gauge */
-#define COOP_PENDING_MAX	128	/* drop threshold */
-#define COOP_BATCH_SIZE		32	/* frames per tasklet run */
+	/*
+	 * Tuning constants. PENDING_MAX must leave enough headroom in
+	 * the primary's 256-frame pool (NR_RECVFRAME) for its USB recv
+	 * pipeline. With drop_primary=1, all traffic goes through the
+	 * pending queue, so this is the binding constraint.
+	 */
+#define COOP_PENDING_MAX	48	/* drop threshold (was 128) */
+#define COOP_BATCH_SIZE		64	/* frames per tasklet run (was 32) */
 
 	/* Statistics */
 	struct coop_rx_stats stats;
