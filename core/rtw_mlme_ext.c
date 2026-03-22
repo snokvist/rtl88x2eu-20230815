@@ -16,6 +16,7 @@
 
 #include <drv_types.h>
 #include <hal_data.h>
+#include <rtw_cooperative_rx.h>
 
 struct mlme_handler mlme_sta_tbl[] = {
 	{WIFI_ASSOCREQ,		"OnAssocReq",	&OnAssocReq},
@@ -13023,6 +13024,9 @@ u8 createbss_hdl(_adapter *padapter, u8 *pbuf)
 				rtw_csa_update_clients_ramask(iface);
 			}
 			RTW_INFO("csa : clear ap_csa_wait_update_bcn after update beacon done\n");
+
+			/* Move cooperative RX helpers to the new AP channel */
+			rtw_coop_rx_notify_channel_switch(padapter);
 		}
 
 		/* Switch channel done, not update beacon from hostapd yet */
@@ -15827,7 +15831,10 @@ u8 rtw_set_chbw_hdl(_adapter *padapter, u8 *pbuf)
 	(void) rtw_mi_get_ch_setting_union(padapter, &u_ch, &u_bw, &u_offset);
 	rtw_mi_update_union_chan_inf(padapter, u_ch, u_offset, u_bw);
 	rtw_rfctl_update_op_mode(dvobj_to_rfctl(dvobj), 0, 0);
-	
+
+	/* Move cooperative RX helpers to the new channel if primary switched */
+	rtw_coop_rx_notify_channel_switch(padapter);
+
 	return	H2C_SUCCESS;
 }
 

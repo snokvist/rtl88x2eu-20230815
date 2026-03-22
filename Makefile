@@ -2546,6 +2546,7 @@ rtk_core :=	core/rtw_cmd.o \
 		core/rtw_txpwr.o \
 		core/monitor/rtw_radiotap.o \
 		core/rtw_recv.o \
+		core/rtw_cooperative_rx.o \
 		core/rtw_sta_mgt.o \
 		core/rtw_ap.o \
 		core/wds/rtw_wds.o \
@@ -2577,6 +2578,26 @@ rtk_core += core/rtw_sdio.o
 endif
 
 EXTRA_CFLAGS += -I$(src)/core/crypto
+
+# Cooperative RX: use kernel crypto API for HW-accelerated decrypt
+# (ARM64 CE, x86 AES-NI, etc). Disable with CONFIG_COOP_RX_KERNEL_CRYPTO=n
+# Requires kernel >= 4.2 for synchronous AEAD API (crypto_aead_decrypt).
+CONFIG_COOP_RX_KERNEL_CRYPTO ?= y
+ifeq ($(CONFIG_COOP_RX_KERNEL_CRYPTO), y)
+  _KVER := $(shell grep '^VERSION' $(KSRC)/Makefile 2>/dev/null | head -1 | awk '{print $$3}')
+  _KPATCH := $(shell grep '^PATCHLEVEL' $(KSRC)/Makefile 2>/dev/null | head -1 | awk '{print $$3}')
+  ifeq ($(_KVER),)
+    $(warning coop_rx: cannot determine kernel version from $(KSRC)/Makefile, disabling CONFIG_COOP_RX_KERNEL_CRYPTO)
+    _KVER_OK := n
+  else
+    _KVER_OK := $(shell [ "$(_KVER)" -gt 4 ] 2>/dev/null && echo y || ([ "$(_KVER)" -eq 4 ] && [ "$(_KPATCH)" -ge 13 ] 2>/dev/null && echo y || echo n))
+  endif
+  ifeq ($(_KVER_OK), y)
+    EXTRA_CFLAGS += -DCONFIG_COOP_RX_KERNEL_CRYPTO
+  else ifneq ($(_KVER),)
+    $(warning coop_rx: kernel $(_KVER).$(_KPATCH) < 4.13, disabling CONFIG_COOP_RX_KERNEL_CRYPTO)
+  endif
+endif
 rtk_core += \
 		core/crypto/aes-internal.o \
 		core/crypto/aes-internal-enc.o \
