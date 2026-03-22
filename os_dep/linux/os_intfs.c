@@ -118,11 +118,11 @@ module_param(rtw_nb_config, int, 0644);
 MODULE_PARM_DESC(rtw_nb_config, "5M/10M/Normal bandwidth configuration");
 #endif
 
-module_param(rtw_cooperative_rx, int, 0644);
+module_param(rtw_cooperative_rx, int, 0444);
 MODULE_PARM_DESC(rtw_cooperative_rx, "Enable cooperative RX diversity (0=off, 1=on)");
 
 extern int rtw_coop_rx_drop_primary;
-module_param(rtw_coop_rx_drop_primary, int, 0644);
+module_param(rtw_coop_rx_drop_primary, int, 0600);
 MODULE_PARM_DESC(rtw_coop_rx_drop_primary,
 	"Debug: drop primary RX data frames when cooperative RX active (0=off, 1=on)");
 

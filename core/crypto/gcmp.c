@@ -13,7 +13,7 @@
 #include "wlancrypto_wrap.h"
 
 
-static void gcmp_aad_nonce(_adapter * padapter, const struct ieee80211_hdr *hdr, const u8 *data,
+void gcmp_aad_nonce(_adapter * padapter, const struct ieee80211_hdr *hdr, const u8 *data,
 			   u8 *aad, size_t *aad_len, u8 *nonce)
 {
 	u16 fc, stype, seq;

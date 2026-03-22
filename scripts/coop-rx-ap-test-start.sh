@@ -71,7 +71,7 @@ find_rtl_usb_devices() {
         [ -f "$dev/idVendor" ] || continue
         local vid=$(cat "$dev/idVendor" 2>/dev/null)
         local pid=$(cat "$dev/idProduct" 2>/dev/null)
-        if [[ "$vid" == "0bda" && "$pid" == "818B" || "$pid" == "A81A" ]]; then
+        if [[ "$vid" == "0bda" && ( "$pid" == "818B" || "$pid" == "A81A" ) ]]; then
             devices+=("$(basename "$dev")")
         fi
     done
