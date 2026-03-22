@@ -119,6 +119,14 @@ struct cooperative_rx_group {
 	u8 cached_key_len;		/* length of cached_key (16 or 32) */
 #endif
 
+#ifdef CONFIG_COOP_RX_CAM_MIRROR
+	/* CAM mirroring: program helper's HW crypto engine with
+	 * primary's keys for zero-cost HW decrypt on helper frames.
+	 * Set during bind_session, cleared during unbind/deinit. */
+	u8 cam_mirror_active;
+	u16 helper_seccfg_orig[COOP_MAX_HELPERS]; /* saved SECCFG */
+#endif
+
 	/* Deferred processing: helper enqueues, drain tasklet processes */
 	_queue pending_queue;		/* validated frames awaiting processing */
 	_tasklet coop_rx_tasklet;	/* drains pending_queue */
@@ -157,6 +165,7 @@ int rtw_coop_rx_bind_session(_adapter *primary);
 void rtw_coop_rx_unbind_session(void);
 int rtw_coop_rx_enable_helper_monitor(_adapter *helper, u8 channel);
 void rtw_coop_rx_notify_channel_switch(_adapter *adapter);
+void rtw_coop_rx_notify_gtk_rekey(_adapter *adapter);
 
 /* Drain tasklet for deferred helper frame processing */
 #include <linux/version.h>
