@@ -2598,6 +2598,15 @@ ifeq ($(CONFIG_COOP_RX_KERNEL_CRYPTO), y)
     $(warning coop_rx: kernel $(_KVER).$(_KPATCH) < 4.13, disabling CONFIG_COOP_RX_KERNEL_CRYPTO)
   endif
 endif
+
+# Cooperative RX: CAM mirroring — program helper's HW crypto engine with
+# primary's keys for zero-cost HW decrypt. Requires CONFIG_COOP_RX_KERNEL_CRYPTO
+# as fallback for broadcast frames where CAM miss occurs.
+CONFIG_COOP_RX_CAM_MIRROR ?= y
+ifeq ($(CONFIG_COOP_RX_CAM_MIRROR), y)
+  EXTRA_CFLAGS += -DCONFIG_COOP_RX_CAM_MIRROR
+endif
+
 rtk_core += \
 		core/crypto/aes-internal.o \
 		core/crypto/aes-internal-enc.o \
